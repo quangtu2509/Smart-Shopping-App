@@ -1,0 +1,24 @@
+
+# Cấu hình CodeRabbit
+language: "vi-VN"
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+
+    # 0 = không tạm dừng sau nhiều commit
+    auto_pause_after_reviewed_commits: 0
+
+    # Review PR vào tất cả branch
+    base_branches:
+      - ".*"
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/build/**"
