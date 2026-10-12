@@ -1,0 +1,655 @@
+{
+  "info": {
+    "name": "Smart Shopping AUTH-00 local",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Local auth assertions. Credentials are generated per run and remain in memory; never export populated variables."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8080/api/v1"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get(\"run_email\")) {",
+          "  const id = pm.variables.replaceIn(\"{{$guid}}\");",
+          "  pm.collectionVariables.set(\"run_email\", \"postman-\" + id + \"@example.com\");",
+          "  pm.collectionVariables.set(\"run_password\", \"Local test only \" + id);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "API-AUTH-01 Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{run_email}}\", \"password\": \"{{run_password}}\", \"confirm_password\": \"{{run_password}}\", \"device_name\": \"Postman local test\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"access_token\", response.data.tokens.access_token);",
+              "pm.collectionVariables.set(\"refresh_token\", response.data.tokens.refresh_token);",
+              "pm.collectionVariables.set(\"session_id\", response.data.tokens.auth_session_id);",
+              "pm.test(\"default profile\", () => { pm.expect(response.data.profile.max_stores).to.eql(3); pm.expect(response.data.profile.optimization_mode).to.eql(\"BALANCED\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Duplicate email",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{run_email}}\", \"password\": \"{{run_password}}\", \"confirm_password\": \"{{run_password}}\", \"device_name\": \"Postman local test\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"error details object\", () => pm.expect(response.error.details).to.be.an(\"object\"));",
+              "pm.test(\"duplicate code\", () => pm.expect(response.error.code).to.eql(\"EMAIL_ALREADY_EXISTS\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-02 Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{run_email}}\", \"password\": \"{{run_password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"access_token\", response.data.tokens.access_token);",
+              "pm.collectionVariables.set(\"refresh_token\", response.data.tokens.refresh_token);",
+              "pm.collectionVariables.set(\"session_id\", response.data.tokens.auth_session_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-08 Me",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"no password or tokens\", () => { pm.expect(response.data).not.to.have.property(\"tokens\"); pm.expect(response.data.user).not.to.have.property(\"password_hash\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-05 Sessions",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/auth/sessions?limit=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"page\", () => { pm.expect(response.data.items).to.have.lengthOf(1); pm.expect(response.data.next_cursor).to.be.a(\"string\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-03 Refresh",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/refresh",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\": \"{{refresh_token}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"used_refresh\", pm.collectionVariables.get(\"refresh_token\"));",
+              "pm.collectionVariables.set(\"old_access\", pm.collectionVariables.get(\"access_token\"));",
+              "pm.collectionVariables.set(\"access_token\", response.data.access_token);",
+              "pm.collectionVariables.set(\"refresh_token\", response.data.refresh_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refresh replay revokes session",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/refresh",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\": \"{{used_refresh}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"error details object\", () => pm.expect(response.error.details).to.be.an(\"object\"));",
+              "pm.test(\"refresh invalid\", () => pm.expect(response.error.code).to.eql(\"REFRESH_TOKEN_INVALID\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Revoked access rejected",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"error details object\", () => pm.expect(response.error.details).to.be.an(\"object\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login for revoke",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{run_email}}\", \"password\": \"{{run_password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"access_token\", response.data.tokens.access_token);",
+              "pm.collectionVariables.set(\"refresh_token\", response.data.tokens.refresh_token);",
+              "pm.collectionVariables.set(\"session_id\", response.data.tokens.auth_session_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-06 Revoke current",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/auth/sessions/{{session_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "pm.test(\"empty body\", () => pm.expect(pm.response.text()).to.eql(\"\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Current session revoked",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"error details object\", () => pm.expect(response.error.details).to.be.an(\"object\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login for logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{run_email}}\", \"password\": \"{{run_password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"access_token\", response.data.tokens.access_token);",
+              "pm.collectionVariables.set(\"refresh_token\", response.data.tokens.refresh_token);",
+              "pm.collectionVariables.set(\"session_id\", response.data.tokens.auth_session_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-04 Logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/logout",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\": \"{{refresh_token}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "pm.test(\"empty body\", () => pm.expect(pm.response.text()).to.eql(\"\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Logout repeated",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/logout",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\": \"{{refresh_token}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "pm.test(\"empty body\", () => pm.expect(pm.response.text()).to.eql(\"\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Login for logout all",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{run_email}}\", \"password\": \"{{run_password}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"access_token\", response.data.tokens.access_token);",
+              "pm.collectionVariables.set(\"refresh_token\", response.data.tokens.refresh_token);",
+              "pm.collectionVariables.set(\"session_id\", response.data.tokens.auth_session_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-07 Logout all",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/auth/logout-all",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "pm.test(\"empty body\", () => pm.expect(pm.response.text()).to.eql(\"\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "All sessions revoked",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"error details object\", () => pm.expect(response.error.details).to.be.an(\"object\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unknown field",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/logout",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"refresh_token\": \"unknown\", \"owner_id\": \"other\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+              "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
+              "const response = pm.response.json();",
+              "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"error details object\", () => pm.expect(response.error.details).to.be.an(\"object\"));",
+              "pm.test(\"unknown field code\", () => pm.expect(response.error.code).to.eql(\"UNKNOWN_FIELD\"));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+plugins {
+    kotlin("jvm") version "2.2.10"
+    kotlin("plugin.serialization") version "2.2.10"
+    application
+}
+
+repositories { mavenCentral() }
+kotlin {
+    jvmToolchain(25)
+    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
+}
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+application { mainClass.set("com.toked.smartshopping.backend.ApplicationKt") }
+
+dependencies {
+    val ktor = "3.2.3"
+    implementation("io.ktor:ktor-server-netty-jvm:$ktor")
+    implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktor")
+    implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:$ktor")
+    implementation("io.ktor:ktor-server-status-pages-jvm:$ktor")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+    implementation("com.zaxxer:HikariCP:6.3.0")
+    implementation("org.flywaydb:flyway-core:11.10.2")
+    implementation("org.flywaydb:flyway-database-postgresql:11.10.2")
+    implementation("org.postgresql:postgresql:42.7.7")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.81")
+    runtimeOnly("ch.qos.logback:logback-classic:1.5.18")
+    testImplementation(kotlin("test-junit"))
+    testImplementation("io.ktor:ktor-server-test-host-jvm:$ktor")
+}
+
+tasks.test {
+    // PostgreSQL integration is mandatory: absence of a test URL is a failure, not a skip.
+    maxParallelForks = 1
+    testLogging { events("failed", "skipped"); showStandardStreams = false }
+}

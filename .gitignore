@@ -1,15 +1,54 @@
+# Shared policy for Frontend (Android) and backend (Ktor).
+# Keep source/resources/tests, Gradle configuration and both wrappers,
+# SQL migrations, empty .env.example, sanitized Postman collections and scripts.
+
+# Gradle, Kotlin, Android and local IDE outputs
+**/.gradle/
+**/.kotlin/
+**/build/
+**/captures/
+**/local.properties
+**/.idea/
+**/.vscode/
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+**/.externalNativeBuild/
+**/.cxx/
+
+# Built application packages and compiled classes, including manual exports
+*.apk
+*.aab
+*.ap_
+*.class
+
+# Runtime logs and memory dumps
+*.log
+*.hprof
+
+# Local environment variables and private signing configuration
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+signing.properties
+key.properties
+
+# Local Python/tool environments
+**/.venv/
+**/venv/
+**/__pycache__/
+**/.pytest_cache/
+
+# Repository-tool artifacts
+/artifacts/
+/.agent-output/
+
+# Operating-system and editor files
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo

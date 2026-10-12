@@ -6,13 +6,13 @@ plugins {
 android {
     namespace = "com.toked.smartshopping"
     compileSdk {
-        version = release(37)
+        version = release(36)
     }
 
     defaultConfig {
         applicationId = "com.toked.smartshopping"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
