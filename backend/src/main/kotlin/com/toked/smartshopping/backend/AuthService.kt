@@ -71,7 +71,7 @@ class AuthService(
             }
             val matches = security.verify(password, account?.hash ?: dummyHash)
             if (account == null || account.hash == null || !matches) {
-                if (account != null) execute(connection, """
+                if (account?.hash != null) execute(connection, """
                     UPDATE app_users SET failed_logins=failed_logins+1,
                     locked_until=CASE WHEN failed_logins+1 >= ? THEN ? ELSE locked_until END WHERE id=?
                 """.trimIndent(), policy.lockThreshold, clock.instant().plusSeconds(policy.lockSeconds), account.id)

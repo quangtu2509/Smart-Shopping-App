@@ -41,7 +41,8 @@ class AuthFlows(private val db: Database, private val auth: AuthService, private
     fun login(email: String, password: String, device: String?, peer: String): Any {
         try { return auth.login(email, password, device) }
         catch (failure: ApiFailure) { if (failure.code != "EMAIL_VERIFICATION_REQUIRED") throw failure }
-        val normalized = email(email)
+        // The password check already accepted this legacy address; do not reapply registration syntax.
+        val normalized = email.trim().lowercase(Locale.ROOT)
         val code = code()
         val dto = db.transaction { c ->
             emailLock(c, normalized)
@@ -87,7 +88,7 @@ class AuthFlows(private val db: Database, private val auth: AuthService, private
     }
 
     fun forgot(email: String, peer: String): ChallengeDto {
-        val normalized = email(email)
+        val normalized = accountEmail(email)
         val code = code()
         var recipient: UUID? = null
         val result = db.transaction { c ->
@@ -104,7 +105,7 @@ class AuthFlows(private val db: Database, private val auth: AuthService, private
 
     fun verifyReset(id: String, code: String): ResetGrant = consume(id, setOf("RESET"), code) { c, row ->
         val owner = row.user ?: throw ApiFailure(400, "CHALLENGE_INVALID")
-        lockUser(c, owner)
+        lockUser(c, owner, checkTemporaryLock = false)
         val token = security.token()
         val grantId = security.digest(token)
         insert(c, "RESET_GRANT", row.email, owner, token, id = grantId)
@@ -116,7 +117,7 @@ class AuthFlows(private val db: Database, private val auth: AuthService, private
         val hash = security.passwordHash(password)
         consume(security.digest(token), setOf("RESET_GRANT"), token) { c, row ->
             val owner = checkNotNull(row.user)
-            lockUser(c, owner)
+            lockUser(c, owner, checkTemporaryLock = false)
             // A Google-only account cannot acquire a local password through recovery.
             if (execute(c, "UPDATE app_users SET password_hash=?,email_verified_at=COALESCE(email_verified_at,?),failed_logins=0,locked_until=NULL WHERE id=? AND password_hash IS NOT NULL",
                     hash, clock.instant(), owner) != 1) throw ApiFailure(400, "CHALLENGE_INVALID")
@@ -236,6 +237,10 @@ class AuthFlows(private val db: Database, private val auth: AuthService, private
     private fun email(value: String) = value.trim().lowercase(Locale.ROOT).also {
         if (it.length > 254 || !Regex("^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\\.[a-z]{2,}$").matches(it)) invalid("email", "INVALID_EMAIL")
     }
+    /** Account lookup retains AuthService's legacy email syntax; Gmail-only applies to new registrations. */
+    private fun accountEmail(value: String) = value.trim().lowercase(Locale.ROOT).also {
+        if (it.length > 254 || !Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$").matches(it)) invalid("email", "INVALID_EMAIL")
+    }
     private fun password(value: String, confirm: String) {
         if (!validNewPassword(value)) invalid("password", "PASSWORD_POLICY")
         if (value != confirm) invalid("confirm_password", "PASSWORD_MISMATCH")
@@ -248,11 +253,12 @@ class AuthFlows(private val db: Database, private val auth: AuthService, private
     private fun emailLock(c: Connection, email: String) {
         query(c, "SELECT pg_advisory_xact_lock(hashtextextended(?,0))", email).use { q -> q.executeQuery().close() }
     }
-    private fun lockUser(c: Connection, id: UUID) {
+    /** Recovery proofs may bypass password lockouts, but every caller must respect administrative locks. */
+    private fun lockUser(c: Connection, id: UUID, checkTemporaryLock: Boolean = true) {
         query(c, "SELECT status,locked_until FROM app_users WHERE id=? FOR UPDATE", id).use { q -> q.executeQuery().use { r ->
             if (!r.next()) throw ApiFailure(400, "CHALLENGE_INVALID")
             val until = r.getTimestamp("locked_until")?.toInstant()
-            if (r.getString("status") == "LOCKED" || (until != null && until > clock.instant())) throw ApiFailure(403, "ACCOUNT_LOCKED",
+            if (r.getString("status") == "LOCKED" || (checkTemporaryLock && until != null && until > clock.instant())) throw ApiFailure(403, "ACCOUNT_LOCKED",
                 retryAfter = if (r.getString("status") == "LOCKED") null else until?.let { maxOf(1, it.epochSecond - clock.instant().epochSecond) })
         } }
     }

@@ -150,6 +150,107 @@ class AuthFlowsTest {
         assertFalse(result.is_new_user)
         assertEquals(initial.user.id,auth.login(initial.user.email,"old",null).user.id)
     }
+    @Test fun legacyEmailShapesCanVerifyWithoutLosingOwnerProfileOrOldPassword() {
+        for (email in listOf("legacy@example.xn--p1ai", "legacy@example.c0m")) {
+            val initial = legacyAccount(email)
+            val challenge = flows.login("  ${email.uppercase(java.util.Locale.ROOT)}  ","old",null,"peer") as ChallengeDto
+            val result = flows.verifyEmail(challenge.challenge_id,mail.getValue(email))
+            assertEquals(initial.user.id,result.user.id)
+            assertEquals(2,result.profile.max_stores)
+            assertFalse(result.is_new_user)
+            assertEquals(initial.user.id,auth.login(email,"old",null).user.id)
+        }
+        fail("VALIDATION_ERROR") { register("new@example.xn--p1ai") }
+    }
+    @Test fun legacyEmailShapesCanRecoverWithoutCreatingAnotherAccount() {
+        for (email in listOf("recover@example.xn--p1ai", "recover@example.c0m")) {
+            val initial = legacyAccount(email)
+            val challenge = flows.forgot("  ${email.uppercase(java.util.Locale.ROOT)}  ","peer")
+            val grant = flows.verifyReset(challenge.challenge_id,mail.getValue(email))
+            flows.reset(grant.reset_token,password,password)
+            val result = auth.login(email,password,null)
+            assertEquals(initial.user.id,result.user.id)
+            assertEquals(2,result.profile.max_stores)
+            fail("INVALID_CREDENTIALS") { auth.login(email,"old",null) }
+        }
+    }
+    @Test fun recoveryStillRejectsMalformedEmailAndHidesUnknownLegacyAddresses() {
+        for (email in listOf("invalid", "a@@example.com", "a @example.com", "a".repeat(255)+"@example.com")) {
+            fail("VALIDATION_ERROR") { flows.forgot(email,"peer") }
+        }
+        assertEquals("VERIFY_RESET",flows.forgot("unknown@example.xn--p1ai","peer").next_action)
+        assertTrue(mail.isEmpty())
+    }
+    @Test fun passwordAttemptsCannotLockGoogleOnlyAccountOrRevokeItsSession() {
+        val first = flows.googleChallenge(); identity = identity.copy(nonce=first.nonce!!)
+        val initial = flows.google(first.challenge_id,"fake",null) as AuthResult
+        repeat(12) { fail("INVALID_CREDENTIALS") { auth.login(initial.user.email,"wrong",null) } }
+        db.transaction { c -> query(c,"SELECT failed_logins,locked_until,password_hash FROM app_users WHERE id=?",java.util.UUID.fromString(initial.user.id)).use { q -> q.executeQuery().use { r ->
+            assertTrue(r.next()); assertEquals(0,r.getInt("failed_logins")); assertNull(r.getTimestamp("locked_until")); assertNull(r.getString("password_hash"))
+        } } }
+        assertEquals(initial.user.id,auth.me(initial.tokens.access_token).user.id)
+        assertEquals(initial.tokens.auth_session_id,auth.refresh(initial.tokens.refresh_token).auth_session_id)
+        val next = flows.googleChallenge(); identity = identity.copy(nonce=next.nonce!!)
+        assertEquals(initial.user.id,(flows.google(next.challenge_id,"fake",null) as AuthResult).user.id)
+    }
+    @Test fun googleOnlyAdministrativeLockStillBlocksGoogle() {
+        val first = flows.googleChallenge(); identity = identity.copy(nonce=first.nonce!!)
+        val initial = flows.google(first.challenge_id,"fake",null) as AuthResult
+        db.transaction { execute(it,"UPDATE app_users SET status='LOCKED' WHERE id=?",java.util.UUID.fromString(initial.user.id)) }
+        fail("SESSION_REVOKED") { auth.me(initial.tokens.access_token) }
+        val next = flows.googleChallenge(); identity = identity.copy(nonce=next.nonce!!)
+        fail("ACCOUNT_LOCKED") { flows.google(next.challenge_id,"fake",null) }
+    }
+    @Test fun correctRecoveryOtpCanUnlockTemporaryPasswordLock() {
+        val initial = verified()
+        temporarilyLock(initial.user.email)
+        val challenge = flows.forgot(initial.user.email,"peer")
+        val grant = flows.verifyReset(challenge.challenge_id,mail.getValue(initial.user.email))
+        flows.reset(grant.reset_token,"RecoveredAb!","RecoveredAb!")
+        assertEquals(initial.user.id,auth.login(initial.user.email,"RecoveredAb!",null).user.id)
+        fail("INVALID_CREDENTIALS") { auth.login(initial.user.email,password,null) }
+        fail("REFRESH_TOKEN_INVALID") { auth.refresh(initial.tokens.refresh_token) }
+        fail("CHALLENGE_INVALID") { flows.reset(grant.reset_token,password,password) }
+    }
+    @Test fun resetGrantSurvivesTemporaryLockIntroducedAfterOtpProof() {
+        val initial = verified()
+        val challenge = flows.forgot(initial.user.email,"peer")
+        val grant = flows.verifyReset(challenge.challenge_id,mail.getValue(initial.user.email))
+        temporarilyLock(initial.user.email)
+        flows.reset(grant.reset_token,"RecoveredAb!","RecoveredAb!")
+        db.transaction { c -> query(c,"SELECT failed_logins,locked_until,status FROM app_users WHERE id=?",java.util.UUID.fromString(initial.user.id)).use { q -> q.executeQuery().use { r ->
+            assertTrue(r.next()); assertEquals(0,r.getInt("failed_logins")); assertNull(r.getTimestamp("locked_until")); assertEquals("ACTIVE",r.getString("status"))
+        } } }
+        assertEquals(initial.user.id,auth.login(initial.user.email,"RecoveredAb!",null).user.id)
+    }
+    @Test fun administrativeLockBlocksBothRecoveryStepsWithoutChangingPassword() {
+        val initial = verified()
+        val owner = java.util.UUID.fromString(initial.user.id)
+        val challenge = flows.forgot(initial.user.email,"peer")
+        val code = mail.getValue(initial.user.email)
+        db.transaction { execute(it,"UPDATE app_users SET status='LOCKED' WHERE id=?",owner) }
+        fail("ACCOUNT_LOCKED") { flows.verifyReset(challenge.challenge_id,code) }
+        db.transaction { execute(it,"UPDATE app_users SET status='ACTIVE' WHERE id=?",owner) }
+        val grant = flows.verifyReset(challenge.challenge_id,code)
+        db.transaction { execute(it,"UPDATE app_users SET status='LOCKED' WHERE id=?",owner) }
+        fail("ACCOUNT_LOCKED") { flows.reset(grant.reset_token,"RecoveredAb!","RecoveredAb!") }
+        db.transaction { execute(it,"UPDATE app_users SET status='ACTIVE' WHERE id=?",owner) }
+        assertEquals(initial.user.id,auth.login(initial.user.email,password,null).user.id)
+        fail("INVALID_CREDENTIALS") { auth.login(initial.user.email,"RecoveredAb!",null) }
+    }
+    private fun legacyAccount(email: String): AuthResult {
+        val initial = auth.register(email,password,password,null)
+        db.transaction {
+            val owner = java.util.UUID.fromString(initial.user.id)
+            execute(it,"UPDATE app_users SET email_verified_at=NULL,password_hash=? WHERE id=?",Security().passwordHash("old"),owner)
+            execute(it,"UPDATE profiles SET max_stores=2 WHERE user_id=?",owner)
+        }
+        return initial
+    }
+    private fun temporarilyLock(email: String) {
+        repeat(10) { fail("INVALID_CREDENTIALS") { auth.login(email,"wrong",null) } }
+        fail("ACCOUNT_LOCKED") { auth.login(email,password,null) }
+    }
     @Test fun googleNewAccountHasNoPasswordAndNonceIsSingleUse() {
         val challenge = flows.googleChallenge()
         identity = identity.copy(nonce = challenge.nonce!!)

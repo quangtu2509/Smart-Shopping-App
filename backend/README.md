@@ -19,6 +19,8 @@ Configure hỏi mật khẩu ứng dụng Gmail qua input ẩn và tạo khóa H
 
 V3 giữ tài khoản/Profile nhưng thu hồi session cũ để bắt buộc xác minh email. Không tự tạo bảng thủ công hoặc xóa/reset database development.
 
+Tài khoản chỉ dùng Google không bị tăng bộ đếm sai mật khẩu/khóa tạm khi có yêu cầu password login; phản hồi vẫn là lỗi chung. Recovery bằng OTP/reset grant hợp lệ được đi qua khóa tạm do nhập sai mật khẩu, nhưng status LOCKED do quản trị vẫn chặn cả hai bước. Reset thành công xóa khóa tạm và thu hồi phiên như trước. Email tài khoản cũ được normalize và tra cứu theo quy tắc legacy cho login/forgot, kể cả TLD punycode; giới hạn Gmail chỉ áp dụng cho đăng ký mới.
+
 API base URL: `http://localhost:8080/api/v1`. Server mặc định bind `127.0.0.1`; cấu hình `HTTP_HOST`/`HTTP_PORT` khi cần. `/me` không có bearer trả 401 theo hợp đồng, không phải health check public. Chưa cấu hình HTTPS/hosting; Android AUTH-01/02 đã có consumer API-AUTH-01–16, gồm đăng ký/đăng nhập, refresh, logout và quản lý phiên.
 
 ## Hợp đồng và cấu hình auth

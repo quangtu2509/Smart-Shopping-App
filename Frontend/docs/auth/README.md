@@ -8,6 +8,7 @@
 - Mật khẩu tạo/reset dài 10–128 ký tự, có hoa/thường/ký tự đặc biệt; password cũ vẫn dùng được để login. Đăng ký mới chỉ nhận gmail.com; tài khoản cũ ngoài Gmail vẫn xác minh và sử dụng được.
 - OTP sáu số, 10 phút, tối đa năm lần sai, gửi lại sau 60 giây. Mã và quyền reset chỉ dùng một lần; gửi lại không xóa số lần sai. Backend bảo vệ OTP bằng HMAC, không lưu mã rõ.
 - Google được kiểm tra chữ ký/audience/issuer/expiry/nonce; dùng sub làm định danh. Trùng email local yêu cầu mật khẩu hiện tại trước khi liên kết. Reset password thu hồi toàn bộ phiên.
+- Password login không tăng failed counters hoặc revoke phiên của Google-only. OTP/reset grant có thể khôi phục qua khóa tạm do nhập sai mật khẩu; status LOCKED do quản trị vẫn chặn cả hai bước. Login/forgot giữ tương thích địa chỉ legacy, kể cả TLD punycode, không áp regex đăng ký mới lên tài khoản cũ.
 - Migration V3 giữ User/Profile, thêm challenge/Google identity và email_verified_at, cho phép password null cho Google-only; thu hồi các phiên cũ để yêu cầu xác minh email. V1/V2 không thay đổi.
 - Debug SDK 36 gọi `10.0.2.2:8080` từ Android Emulator, không cần adb reverse. Release yêu cầu HTTPS. Integration tests phải đặt smartShoppingDebugApiBaseUrl và authIntegrationBaseUrl cùng URL fixture riêng.
 
@@ -16,7 +17,9 @@
 | Mốc | Kết quả |
 |---|---|
 | Backend, 18/10/2026 | 34 tests trên PostgreSQL tạm 55432; 0 failure/skip |
+| Backend/account access, 19/10/2026 | 42 tests, gồm 8 regression mới cho Google-only/khóa tạm/email legacy; 0 failure/error/skip |
 | Postman/Newman, 18/10/2026 | 27 collection requests, 76 assertions; 0 failure |
+| Postman/Newman hồi quy, 19/10/2026 | 29 lần thực thi request từ collection 27 requests, 76 assertions; 0 failure |
 | Android đầy đủ, 18/10/2026 | 44 unit và 22 device tests, 0 failure/skip; bốn luồng live qua fixture HTTP/PostgreSQL riêng |
 | Android/network, 19/10/2026 | 46 unit, build debug/AndroidTest; 2 device network checks đạt, 0 failure/skip trên Pixel_9a Android 15/API 35 |
 | Emulator không reverse, 19/10/2026 | GET /me không bearer từ Android qua 10.0.2.2 trả 401 AUTH_REQUIRED, không truy cập database |
