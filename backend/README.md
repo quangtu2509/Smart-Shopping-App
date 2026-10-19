@@ -1,38 +1,29 @@
-# Backend local — AUTH-00
+# Backend local — Auth
 
 Ktor + PostgreSQL 18, JDBC/HikariCP và Flyway. Backend là Gradle project riêng, Android giữ compile/target SDK 36. JDK daemon/toolchain 25, Java/Kotlin bytecode target 17. Migration nằm ở `src/main/resources/db/migration/`; Flyway tự áp dụng khi backend khởi động. Không tạo bảng thủ công bằng pgAdmin.
+
+AUTH-01/02 đã có OTP Gmail, Google/link và password recovery trong API-AUTH-01–16; người dùng xác nhận hoàn tất ngày 19/10/2026. Xem [phạm vi và bằng chứng AUTH](../Frontend/docs/auth/README.md) để phân biệt test tự động với xác nhận thực tế, cùng tác động migration V3 lên phiên cũ.
 
 Gốc repository Git là `Smart Shopping App/`, chỉ có hai project `Frontend/` và `backend/` cùng metadata Git. Workspace root là thư mục cha `Smart Shopping/`, chứa `.agents/`, `docs/`, `plans/` và `tests/` bên ngoài repository. Các lệnh ghi workspace root chạy từ thư mục cha này. Build/chạy backend bằng wrapper trong `backend/`; khi deploy, chọn thư mục này làm project build. Hosting/production chưa được cấu hình.
 
 ## Chạy với database đã tạo trong pgAdmin
 
-Database: `smart_shopping`; owner/login: `smart_shopping_app`; host: `localhost`; port: `5432`. Đây là cấu hình development, không phải thông tin hosting production. Đặt biến môi trường trong PowerShell và chạy từ `backend/`:
+Database: `smart_shopping`; owner/login: `smart_shopping_app`; host: `localhost`; port: `5432`. Đọc [AUTH_SETUP](AUTH_SETUP.md) để cấu hình Google và Gmail SMTP. Từ backend:
 
 ```powershell
-$env:DB_URL = 'jdbc:postgresql://localhost:5432/smart_shopping'
-$env:DB_USER = 'smart_shopping_app'
-$localPassword = Read-Host 'Database password' -AsSecureString
-$passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($localPassword)
-try {
-    $env:DB_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
-} finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
-}
-try {
-    .\gradlew.bat run
-} finally {
-    Remove-Item Env:DB_PASSWORD -ErrorAction SilentlyContinue
-    $localPassword.Dispose()
-}
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-local.ps1 -Action Configure
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-local.ps1 -Action Run
 ```
 
-Ví dụ trên dành cho người dùng chạy local. Agent chạy mọi task Gradle qua skill gradle-run. `.env.example` chỉ mô tả tên biến; app không tự đọc file `.env`. Password chỉ nằm trong environment của tiến trình; không gửi qua chat, command argument hoặc collection chia sẻ.
+Configure hỏi mật khẩu ứng dụng Gmail qua input ẩn và tạo khóa HMAC ngẫu nhiên, lưu bằng Windows DPAPI trong ignored `.env.local.xml`. Run hỏi mật khẩu PostgreSQL nếu environment chưa có; nạp cấu hình chỉ vào tiến trình rồi chạy backend. Agent không chạy script này hoặc đọc file bí mật. `.env.example` chỉ mô tả tên biến, không tự được nạp. Người dùng chạy Gradle local trực tiếp; agent dùng skill gradle-run.
 
-API base URL: `http://localhost:8080/api/v1`. Server mặc định bind `127.0.0.1`; cấu hình `HTTP_HOST`/`HTTP_PORT` khi cần. `/me` không có bearer trả 401 theo hợp đồng, không phải health check public. Chưa cấu hình HTTPS/hosting và chưa nối Android.
+V3 giữ tài khoản/Profile nhưng thu hồi session cũ để bắt buộc xác minh email. Không tự tạo bảng thủ công hoặc xóa/reset database development.
+
+API base URL: `http://localhost:8080/api/v1`. Server mặc định bind `127.0.0.1`; cấu hình `HTTP_HOST`/`HTTP_PORT` khi cần. `/me` không có bearer trả 401 theo hợp đồng, không phải health check public. Chưa cấu hình HTTPS/hosting; Android AUTH-01/02 đã có consumer API-AUTH-01–16, gồm đăng ký/đăng nhập, refresh, logout và quản lý phiên.
 
 ## Hợp đồng và cấu hình auth
 
-Thực hiện API-AUTH-01–08 tại [contracts 15.6](../../docs/03-architecture/system-and-integrations.md#156-api-specification--contracts). JSON snake_case, envelope có request_id, credentials response no-store, không nhận owner từ client. User/default Profile/auth session tạo trong một transaction. Email trim/lowercase; password 15–128 Unicode code points, không trim; confirm không lưu.
+Thực hiện API-AUTH-01–16 tại [contracts 15.6](../../docs/03-architecture/system-and-integrations.md#156-api-specification--contracts). JSON snake_case, envelope có request_id, credentials response no-store, không nhận owner từ client. Đăng ký trả 202 ChallengeDto; chỉ sau OTP mới tạo User/default Profile/auth session nguyên tử. Email trim/lowercase; đăng ký mới chỉ gmail.com; password tạo/reset 10–128 Unicode code points với hoa/thường/ký tự đặc biệt không tính khoảng trắng, không bắt buộc số, không trim; confirm không lưu.
 
 Password dùng Argon2id với salt 16 byte, memory 19 MiB, iterations 2, parallelism 1. Token ngẫu nhiên 32 byte; database chỉ giữ SHA-256 hash. Refresh rotate nguyên tử, vô hiệu access cũ; replay refresh đã dùng revoke phiên, kể cả access mới. Lock tài khoản revoke các phiên và unlock không hồi sinh phiên cũ. Session là auth session, không phải ShoppingSession.
 
@@ -80,4 +71,10 @@ python3 .agents/skills/gradle-run/scripts/gradle_run.py finish --workflow WORKFL
 
 ## Postman thủ công
 
-Import `postman/auth00.postman_collection.json`, đặt `base_url` vào backend local và Run Collection. Collection có 18 request, bao phủ 8 endpoint cùng lỗi duplicate/replay/revoke/unknown field; tự tạo email/password test và giữ token trong collection variables khi chạy. Không export biến đã có credentials. Các request này tạo tài khoản test trong database được chọn; dùng instance test khi kiểm chứng lặp.
+AUTH-02 bổ sung Retry-After cho 403 ACCOUNT_LOCKED khi có thời điểm hết khóa tạm, chỉ sau khi mật khẩu hợp lệ. Khóa quản trị không có thời điểm mở khóa không trả header này; client cần hiển thị hướng liên hệ hỗ trợ thay vì tự đặt thời gian mở khóa. Không đổi JSON/schema/migration.
+
+Import `postman/auth00.postman_collection.json`, đặt base_url, run_email bằng Gmail bạn kiểm soát và run_password đạt policy. Collection có 27 request, gồm OTP/recovery và các API session, Google negative cases. Với Gmail thật, gửi từng request và nhập otp_code từ email; không Run Collection qua bước chờ OTP. Chỉ server test tự động có fixture_url để tự lấy mã. Không export biến có credentials. Xem [hướng dẫn từng bước](AUTH_SETUP.md).
+
+## Email, Google và recovery
+
+AuthFlows xử lý OTP/HMAC, resend, Google nonce/link và reset; AuthProviders tích hợp SMTP STARTTLS + Google ID token verifier. Mail/Google gọi ngoài transaction. AuthFixtureServer chỉ nằm ở src/test, bind 127.0.0.1:18080 với PostgreSQL tạm 55432, fake mail và không nhận Google thật; fixture không có trong application distribution. API-AUTH-09–16 và cách test Desktop xem [AUTH_SETUP](AUTH_SETUP.md). Token Google/password/OTP không được ghi log.

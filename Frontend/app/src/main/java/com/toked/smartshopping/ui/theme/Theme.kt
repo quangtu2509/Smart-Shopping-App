@@ -1,6 +1,5 @@
 package com.toked.smartshopping.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -9,35 +8,59 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = Color(0xFF78D8B5),
+    onPrimary = Color(0xFF003829),
+    primaryContainer = Color(0xFF00513C),
+    onPrimaryContainer = Color(0xFF94F5D0),
+    secondary = Color(0xFFBCC9C5),
+    secondaryContainer = Color(0xFF283C35),
+    onSecondaryContainer = Color(0xFF94F5D0),
+    background = Color(0xFF101820),
+    onBackground = Color(0xFFE3EAF3),
+    surface = Color(0xFF101820),
+    onSurface = Color(0xFFE3EAF3),
+    surfaceContainerLowest = Color(0xFF18232D),
+    surfaceContainerLow = Color(0xFF202F3A),
+    surfaceContainer = Color(0xFF293945),
+    surfaceContainerHigh = Color(0xFF32434F),
+    surfaceContainerHighest = Color(0xFF3A4B57),
+    onSurfaceVariant = Color(0xFFBCC9C5),
+    outlineVariant = Color(0xFF43544C),
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = ShoppingGreen,
     onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    primaryContainer = ShoppingGreenContainer,
+    onPrimaryContainer = Color(0xFFF5FFF8),
+    secondary = ShoppingMuted,
+    secondaryContainer = ShoppingBadge,
+    onSecondaryContainer = ShoppingGreen,
+    background = ShoppingBackground,
+    onBackground = ShoppingInk,
+    surface = ShoppingBackground,
+    onSurface = ShoppingInk,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = ShoppingField,
+    surfaceContainer = Color(0xFFE6EEFF),
+    surfaceContainerHigh = Color(0xFFDEE9FC),
+    surfaceContainerHighest = Color(0xFFD9E3F6),
+    onSurfaceVariant = ShoppingMuted,
+    outline = Color(0xFF6E7A73),
+    outlineVariant = ShoppingBorder,
+    error = Color(0xFFBA1A1A),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF93000A),
 )
 
 @Composable
 fun SmartShoppingTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

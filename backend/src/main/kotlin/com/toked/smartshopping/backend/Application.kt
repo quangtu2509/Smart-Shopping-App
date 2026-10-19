@@ -25,6 +25,12 @@ fun main() {
     fun required(name: String) = System.getenv(name)?.takeIf { it.isNotBlank() }
         ?: error("Set $name in the local environment before starting the backend")
     fun number(name: String, default: Long) = System.getenv(name)?.toLong() ?: default
+    val challengeKey = try { java.util.Base64.getDecoder().decode(required("AUTH_CHALLENGE_KEY")) }
+        catch (_: IllegalArgumentException) { error("AUTH_CHALLENGE_KEY must be Base64 with at least 32 decoded bytes") }
+    require(challengeKey.size >= 32)
+    val googleClientId = required("GOOGLE_WEB_CLIENT_ID")
+    val mailer = SmtpAuthMailer(required("SMTP_USERNAME"), required("SMTP_PASSWORD"),
+        System.getenv("SMTP_HOST") ?: "smtp.gmail.com", number("SMTP_PORT", 587).toInt())
     val db = Database(System.getenv("DB_URL") ?: "jdbc:postgresql://localhost:5432/smart_shopping",
         System.getenv("DB_USER") ?: "smart_shopping_app", required("DB_PASSWORD"))
     try {
@@ -32,12 +38,15 @@ fun main() {
         val policy = AuthPolicy(number("ACCESS_TTL_SECONDS",900), number("SESSION_TTL_SECONDS",2592000),
             number("AUTH_RATE_LIMIT",20).toInt(), number("AUTH_RATE_WINDOW_SECONDS",60),
             number("LOGIN_LOCK_THRESHOLD",10).toInt(), number("LOGIN_LOCK_SECONDS",900))
+        val service = AuthService(db, policy = policy)
+        val flows = AuthFlows(db, service, mailer, GoogleTokenVerifier(googleClientId), challengeKey)
         embeddedServer(Netty, host = System.getenv("HTTP_HOST") ?: "127.0.0.1",
-            port = number("HTTP_PORT",8080).toInt()) { authModule(AuthService(db, policy = policy)) }.start(wait = true)
+            port = number("HTTP_PORT",8080).toInt()) { authModule(service, flows) }.start(wait = true)
     } finally { db.close() }
 }
 
-fun Application.authModule(service: AuthService) {
+fun Application.authModule(service: AuthService, flows: AuthFlows? = null) {
+    fun extended() = flows ?: throw ApiFailure(503, "AUTH_PROVIDER_UNCONFIGURED")
     install(ContentNegotiation) { json(wireJson) }
     intercept(ApplicationCallPipeline.Setup) {
         val id = "req_${UUID.randomUUID()}"
@@ -70,17 +79,82 @@ fun Application.authModule(service: AuthService) {
                 val body = body(call,setOf("email","password","confirm_password"),setOf("device_name"))
                 val result = withContext(Dispatchers.IO) {
                     service.rateLimit(call.request.local.remoteHost,"register")
-                    service.register(text(body,"email"),text(body,"password"),text(body,"confirm_password"),optionalText(body,"device_name"))
+                    extended().register(text(body,"email"),text(body,"password"),text(body,"confirm_password"),optionalText(body,"device_name"),call.request.local.remoteHost)
                 }
-                call.respond(HttpStatusCode.Created,Envelope(result,meta(call)))
+                call.respond(HttpStatusCode.Accepted,Envelope(result,meta(call)))
             }
             post("/auth/login") {
                 val body = body(call,setOf("email","password"),setOf("device_name"))
                 val result = withContext(Dispatchers.IO) {
                     service.rateLimit(call.request.local.remoteHost,"login")
-                    service.login(text(body,"email"),text(body,"password"),optionalText(body,"device_name"))
+                    if (flows == null) service.login(text(body,"email"),text(body,"password"),optionalText(body,"device_name"))
+                    else flows.login(text(body,"email"),text(body,"password"),optionalText(body,"device_name"),call.request.local.remoteHost)
                 }
-                call.respond(Envelope(result,meta(call)))
+                respondAuthStep(call, result)
+            }
+            post("/auth/email/verify") {
+                val b = body(call, setOf("challenge_id", "code"))
+                val result = withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "verify-email")
+                    extended().verifyEmail(text(b,"challenge_id"), text(b,"code"))
+                }
+                call.respond(Envelope(result, meta(call)))
+            }
+            post("/auth/email/resend") {
+                val b = body(call, setOf("challenge_id"))
+                val result = withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "resend")
+                    extended().resend(text(b,"challenge_id"), call.request.local.remoteHost)
+                }
+                call.respond(HttpStatusCode.Accepted, Envelope(result, meta(call)))
+            }
+            post("/auth/google/challenge") {
+                body(call, emptySet())
+                val result = withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "google-challenge")
+                    extended().googleChallenge()
+                }
+                call.respond(Envelope(result, meta(call)))
+            }
+            post("/auth/google") {
+                val b = body(call, setOf("challenge_id", "id_token"), setOf("device_name"))
+                val result = withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "google")
+                    extended().google(text(b,"challenge_id"),text(b,"id_token"),optionalText(b,"device_name"))
+                }
+                respondAuthStep(call, result)
+            }
+            post("/auth/google/link") {
+                val b = body(call, setOf("challenge_id", "password"))
+                val result = withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "google-link")
+                    extended().link(text(b,"challenge_id"),text(b,"password"))
+                }
+                call.respond(Envelope(result, meta(call)))
+            }
+            post("/auth/password/forgot") {
+                val b = body(call, setOf("email"))
+                val result = withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "forgot")
+                    extended().forgot(text(b,"email"),call.request.local.remoteHost)
+                }
+                call.respond(HttpStatusCode.Accepted, Envelope(result, meta(call)))
+            }
+            post("/auth/password/verify") {
+                val b = body(call, setOf("challenge_id", "code"))
+                val result = withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "verify-reset")
+                    extended().verifyReset(text(b,"challenge_id"),text(b,"code"))
+                }
+                call.respond(Envelope(result, meta(call)))
+            }
+            post("/auth/password/reset") {
+                val b = body(call, setOf("reset_token", "password", "confirm_password"))
+                withContext(Dispatchers.IO) {
+                    service.rateLimit(call.request.local.remoteHost, "reset")
+                    extended().reset(text(b,"reset_token"),text(b,"password"),text(b,"confirm_password"))
+                }
+                call.respond(HttpStatusCode.NoContent)
             }
             post("/auth/refresh") {
                 val body = body(call,setOf("refresh_token"))
@@ -115,6 +189,14 @@ fun Application.authModule(service: AuthService) {
                 call.respond(Envelope(result,meta(call)))
             }
         }
+    }
+}
+
+private suspend fun respondAuthStep(call: ApplicationCall, result: Any) {
+    when (result) {
+        is AuthResult -> call.respond(Envelope(result, meta(call)))
+        is ChallengeDto -> call.respond(HttpStatusCode.Accepted, Envelope(result, meta(call)))
+        else -> error("Unsupported authentication step")
     }
 }
 

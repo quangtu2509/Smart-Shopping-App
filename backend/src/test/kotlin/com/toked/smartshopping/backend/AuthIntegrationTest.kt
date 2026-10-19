@@ -27,7 +27,7 @@ class AuthIntegrationTest {
         require(url.matches(Regex("jdbc:postgresql://127\\.0\\.0\\.1:55432/auth00_test"))) { "Refusing to reset any non-isolated database" }
         db = Database(url,"auth00_test","")
         db.migrate()
-        db.transaction { execute(it,"TRUNCATE auth_rate_limits,refresh_tokens,auth_sessions,profiles,app_users") }
+        db.transaction { execute(it,"TRUNCATE auth_challenges,auth_identities,auth_rate_limits,refresh_tokens,auth_sessions,profiles,app_users") }
         clock.now = Instant.parse("2026-10-12T00:00:00Z")
         service = AuthService(db,clock = clock)
     }
@@ -151,7 +151,9 @@ class AuthIntegrationTest {
     }
 
     @Test fun httpContractsRejectMalformedUnknownAndUnauthenticatedRequests() = testApplication {
-        application { authModule(service) }
+        val codes = mutableMapOf<String,String>()
+        val flows = AuthFlows(db,service,AuthMailer { e,c,_ -> codes[e]=c },GoogleVerifier { throw ApiFailure(401,"GOOGLE_TOKEN_INVALID") },ByteArray(32),clock)
+        application { authModule(service,flows) }
         suspend fun post(path: String, body: String) = client.post("/api/v1$path") { contentType(ContentType.Application.Json); setBody(body) }
         val malformed = post("/auth/register","{")
         assertEquals(HttpStatusCode.BadRequest,malformed.status)
@@ -166,11 +168,17 @@ class AuthIntegrationTest {
         val oversized = post("/auth/register"," ".repeat(8193))
         assertEquals(HttpStatusCode.BadRequest,oversized.status)
         val register = post("/auth/register",buildJsonObject {
-            put("email","http@example.com"); put("password",password); put("confirm_password",password)
+            put("email","http@gmail.com"); put("password",password); put("confirm_password",password)
         }.toString())
-        assertEquals(HttpStatusCode.Created,register.status)
+        assertEquals(HttpStatusCode.Accepted,register.status)
         assertEquals("no-store",register.headers[HttpHeaders.CacheControl])
-        val data = json(register.bodyAsText())["data"]!!.jsonObject
+        val pending = json(register.bodyAsText())["data"]!!.jsonObject
+        assertFalse("tokens" in pending)
+        val verified = post("/auth/email/verify",buildJsonObject {
+            put("challenge_id",pending["challenge_id"]!!.jsonPrimitive.content); put("code",codes.getValue("http@gmail.com"))
+        }.toString())
+        assertEquals(HttpStatusCode.OK,verified.status)
+        val data = json(verified.bodyAsText())["data"]!!.jsonObject
         val access = data["tokens"]!!.jsonObject["access_token"]!!.jsonPrimitive.content
         val me = client.get("/api/v1/me") { bearerAuth(access) }
         assertEquals(HttpStatusCode.OK,me.status)
@@ -196,6 +204,24 @@ class AuthIntegrationTest {
         val payload = json(limited.bodyAsText())
         assertEquals("RATE_LIMITED",payload["error"]!!.jsonObject["code"]!!.jsonPrimitive.content)
         assertFalse("data" in payload)
+    }
+
+    @Test fun httpTemporaryLockProvidesWaitTimeOnlyAfterValidCredentials() = testApplication {
+        registered()
+        val locking = AuthService(db, clock = clock, policy = AuthPolicy(lockThreshold = 1, lockSeconds = 90))
+        application { authModule(locking) }
+        suspend fun login(value: String) = client.post("/api/v1/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject { put("email", "one@example.com"); put("password", value) }.toString())
+        }
+        val invalid = login("wrong-password")
+        assertEquals(HttpStatusCode.Unauthorized, invalid.status)
+        assertEquals(null, invalid.headers[HttpHeaders.RetryAfter])
+        val locked = login(password)
+        assertEquals(HttpStatusCode.Forbidden, locked.status)
+        assertTrue(locked.headers[HttpHeaders.RetryAfter]!!.toLong() in 90..91)
+        assertEquals("ACCOUNT_LOCKED", json(locked.bodyAsText())["error"]!!.jsonObject["code"]!!.jsonPrimitive.content)
+        assertFalse("data" in json(locked.bodyAsText()))
     }
 
     private fun registered() = service.register("one@example.com",password,password,"test")

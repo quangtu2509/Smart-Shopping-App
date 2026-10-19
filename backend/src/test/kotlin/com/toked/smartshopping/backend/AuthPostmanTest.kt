@@ -2,6 +2,8 @@ package com.toked.smartshopping.backend
 
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
+import io.ktor.server.routing.*
+import io.ktor.server.response.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import org.junit.Test
@@ -21,7 +23,14 @@ class AuthPostmanTest {
         require(url == "jdbc:postgresql://127.0.0.1:55432/auth00_test")
         Database(url,"auth00_test","").use { database ->
             database.migrate()
-            val server = embeddedServer(Netty, host = "127.0.0.1", port = 0) { authModule(AuthService(database)) }
+            val codes = java.util.concurrent.ConcurrentHashMap<String,String>()
+            val service = AuthService(database)
+            val flows = AuthFlows(database,service,AuthMailer { e,c,_ -> codes[e]=c },GoogleVerifier { throw ApiFailure(401,"GOOGLE_TOKEN_INVALID") },ByteArray(32))
+            val server = embeddedServer(Netty, host = "127.0.0.1", port = 0) {
+                authModule(service,flows)
+                // Only the isolated test server has this fixture; it is never part of product routes.
+                routing { get("/fixture/code") { call.respondText(codes[call.request.queryParameters["email"]].orEmpty()) } }
+            }
             server.start(wait = false)
             try {
                 val port = server.engine.resolvedConnectors().first().port
@@ -32,7 +41,7 @@ class AuthPostmanTest {
                 val output = File("build/postman-local.log")
                 val builder = ProcessBuilder("cmd.exe","/c","npx.cmd","--offline","--yes","newman@6.2.1","run",
                     "postman/auth00.postman_collection.json","--env-var","base_url=http://127.0.0.1:$port/api/v1",
-                    "--reporters","cli","--reporter-cli-no-console","--reporter-cli-no-banner",
+                    "--env-var","fixture_url=http://127.0.0.1:$port/fixture/code","--reporters","cli","--reporter-cli-no-console","--reporter-cli-no-banner",
                     "--reporter-cli-no-failures","--reporter-cli-no-assertions","--timeout-request","10000")
                     .redirectErrorStream(true).redirectOutput(output)
                 builder.environment()["NO_PROXY"] = "127.0.0.1,localhost"

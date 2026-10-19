@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "Smart Shopping AUTH-00 local",
+    "name": "Smart Shopping Auth — OTP, Google, sessions and recovery",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "description": "Local auth assertions. Credentials are generated per run and remain in memory; never export populated variables."
   },
@@ -17,9 +17,10 @@
         "type": "text/javascript",
         "exec": [
           "if (!pm.collectionVariables.get(\"run_email\")) {",
+          "  if (!pm.environment.get(\"fixture_url\")) throw new Error(\"Set run_email to your own Gmail and run_password locally before sending real email.\");",
           "  const id = pm.variables.replaceIn(\"{{$guid}}\");",
-          "  pm.collectionVariables.set(\"run_email\", \"postman-\" + id + \"@example.com\");",
-          "  pm.collectionVariables.set(\"run_password\", \"Local test only \" + id);",
+          "  pm.collectionVariables.set(\"run_email\", \"postman-\" + id + \"@gmail.com\");",
+          "  pm.collectionVariables.set(\"run_password\", \"LocalTest!\" + id);",
           "}"
         ]
       }
@@ -53,7 +54,82 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+              "pm.test(\"HTTP 202\",()=>pm.response.to.have.status(202));",
+              "const response=pm.response.json();",
+              "pm.collectionVariables.set(\"challenge_id\",response.data.challenge_id);",
+              "pm.test(\"No credentials before proof\",()=>pm.expect(response.data).not.to.have.property(\"tokens\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-10 Resend cooldown",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/email/resend",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"challenge_id\": \"{{challenge_id}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 429\",()=>pm.response.to.have.status(429));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-09 Verify registration",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/email/verify",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"challenge_id\": \"{{challenge_id}}\", \"code\": \"{{otp_code}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const fixture=pm.environment.get(\"fixture_url\");",
+              "if(fixture) pm.sendRequest(fixture+\"?email=\"+encodeURIComponent(pm.collectionVariables.get(\"run_email\")),(err,res)=>{if(err)throw err;pm.variables.set(\"otp_code\",res.text());});",
+              "else if(!pm.variables.get(\"otp_code\")) throw new Error(\"Enter the emailed code as local otp_code before sending this request.\");"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
               "pm.test(\"no-store\", () => pm.expect(pm.response.headers.get(\"Cache-Control\")).to.eql(\"no-store\"));",
               "const response = pm.response.json();",
               "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
@@ -646,6 +722,246 @@
               "pm.test(\"request id\", () => pm.expect(response.meta.request_id).to.be.a(\"string\"));",
               "pm.test(\"error details object\", () => pm.expect(response.error.details).to.be.an(\"object\"));",
               "pm.test(\"unknown field code\", () => pm.expect(response.error.code).to.eql(\"UNKNOWN_FIELD\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-11 Google nonce",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/google/challenge",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "pm.collectionVariables.set(\"google_challenge_id\",pm.response.json().data.challenge_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-12 Invalid Google token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/google",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"challenge_id\": \"{{google_challenge_id}}\", \"id_token\": \"invalid\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\",()=>pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-14 Forgot password",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/password/forgot",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{run_email}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 202\",()=>pm.response.to.have.status(202));",
+              "pm.collectionVariables.set(\"reset_challenge_id\",pm.response.json().data.challenge_id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-15 Verify recovery",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/password/verify",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"challenge_id\": \"{{reset_challenge_id}}\", \"code\": \"{{otp_code}}\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const fixture=pm.environment.get(\"fixture_url\");",
+              "if(fixture) pm.sendRequest(fixture+\"?email=\"+encodeURIComponent(pm.collectionVariables.get(\"run_email\")),(err,res)=>{if(err)throw err;pm.variables.set(\"otp_code\",res.text());});",
+              "else if(!pm.variables.get(\"otp_code\")) throw new Error(\"Enter the emailed code as local otp_code before sending this request.\");"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "pm.collectionVariables.set(\"reset_token\",pm.response.json().data.reset_token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-16 Reset password",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/password/reset",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"reset_token\": \"{{reset_token}}\", \"password\": \"NewLocalTest!Ab\", \"confirm_password\": \"NewLocalTest!Ab\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 204\",()=>pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reset grant replay rejected",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/password/reset",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"reset_token\": \"{{reset_token}}\", \"password\": \"NewLocalTest!Ab\", \"confirm_password\": \"NewLocalTest!Ab\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 400\",()=>pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "API-AUTH-13 Invalid link challenge",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/google/link",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"challenge_id\": \"nonexistent\", \"password\": \"password\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 400\",()=>pm.response.to.have.status(400));"
             ]
           }
         }
