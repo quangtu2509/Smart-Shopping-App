@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Configure','Run')][string]$Action = 'Run',
-    [string]$Sender = 'nguyeenxtask@gmail.com',
+    [Alias('Sender')][string]$SenderEmail = '',
     [string]$WebClientId = '803153983048-beki7emtkn0ph45sjm5bs4emud5mkn1o.apps.googleusercontent.com'
 )
 $ErrorActionPreference = 'Stop'
@@ -16,13 +16,18 @@ function Get-SecretText([Security.SecureString]$Secret) {
 
 if ($Action -eq 'Configure') {
     if (Test-Path -LiteralPath $privatePath) { throw 'Local configuration exists. Keep it to preserve the challenge key; remove it yourself only if intentionally replacing credentials.' }
+    if ([string]::IsNullOrWhiteSpace($SenderEmail)) { $SenderEmail = Read-Host 'Gmail sender email' }
+    $SenderEmail = $SenderEmail.Trim()
+    try { $address = New-Object System.Net.Mail.MailAddress($SenderEmail) }
+    catch { throw 'A valid sender email is required.' }
+    if ($address.Address -ne $SenderEmail -or $address.Host -notmatch '\.') { throw 'A valid sender email is required.' }
     $password = Read-Host 'Gmail app password (hidden; not your Google account password)' -AsSecureString
     if ($password.Length -eq 0) { throw 'App password is required.' }
     $bytes = New-Object byte[] 32
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     $key = ConvertTo-SecureString ([Convert]::ToBase64String($bytes)) -AsPlainText -Force
-    [PSCustomObject]@{Sender=$Sender; WebClientId=$WebClientId; Password=$password; ChallengeKey=$key} |
+    [PSCustomObject]@{Sender=$SenderEmail; WebClientId=$WebClientId; Password=$password; ChallengeKey=$key} |
         Export-Clixml -LiteralPath $privatePath -Encoding UTF8
     Write-Output 'Saved local configuration. Secrets use Windows DPAPI for the current user. Do not share this file.'
     return

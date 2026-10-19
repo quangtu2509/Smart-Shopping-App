@@ -235,8 +235,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
         try {
             val challenge = api.googleChallenge()
             val token = getToken(challenge.nonce ?: throw AuthFailure.InvalidResponse())
-            val result = api.google(challenge.id,token)
-            saveAuthenticated(result,if (result.isNewUser) AuthPage.REGISTER_SUCCESS else AuthPage.HOME_ENTRY)
+            completeGoogle(challenge.id, token)
         } catch (cancelled: CancellationException) {
             mutableState.value = state.value.copy(sending = false)
             throw cancelled
@@ -244,6 +243,19 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
         catch (step: AuthFailure.NextStep) { showChallenge(step.challenge) }
         catch (failure: AuthFailure.Http) { handleHttp(failure) }
         catch (_: Exception) { failed("Chưa đăng nhập được bằng Google. Kiểm tra tài khoản và kết nối rồi thử lại.") }
+    }
+
+    /** After the Activity-bound picker returns, the ViewModel owns backend completion and persistence. */
+    private fun completeGoogle(challengeId: String, token: String) {
+        viewModelScope.launch {
+            try {
+                val result = api.google(challengeId, token)
+                saveAuthenticated(result, if (result.isNewUser) AuthPage.REGISTER_SUCCESS else AuthPage.HOME_ENTRY)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (step: AuthFailure.NextStep) { showChallenge(step.challenge) }
+            catch (failure: AuthFailure.Http) { handleHttp(failure) }
+            catch (_: Exception) { failed("Chưa đăng nhập được bằng Google. Kiểm tra tài khoản và kết nối rồi thử lại.") }
+        }
     }
 
     fun showLogin() {

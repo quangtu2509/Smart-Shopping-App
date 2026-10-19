@@ -264,6 +264,47 @@ class AuthFlowsTest {
         assertTrue(mail.isEmpty())
         fail("INVALID_CREDENTIALS") { auth.login(result.user.email,"any",null) }
     }
+    @Test fun googleCompletionDoesNotWaitForUnrelatedEmptyEmailLock() {
+        val challenge = flows.googleChallenge(); identity = identity.copy(nonce = challenge.nonce!!)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            db.transaction { c ->
+                query(c,"SELECT pg_advisory_xact_lock(hashtextextended('',0))").use { it.executeQuery().close() }
+                val request = executor.submit<AuthResult> { flows.google(challenge.challenge_id,"fake",null) as AuthResult }
+                val result = try { request.get(3, java.util.concurrent.TimeUnit.SECONDS) }
+                    catch (_: java.util.concurrent.TimeoutException) { fail("Google completion waited for another transaction's empty-email lock") }
+                assertEquals(identity.email,result.user.email)
+            }
+        } finally { executor.shutdown(); assertTrue(executor.awaitTermination(10,java.util.concurrent.TimeUnit.SECONDS)) }
+    }
+    @Test fun concurrentGoogleChallengesForSameEmailKeepOneOwnerAndProfile() {
+        val first = flows.googleChallenge(); val second = flows.googleChallenge()
+        val concurrent = AuthFlows(db,auth,AuthMailer { _,_,_ -> },GoogleVerifier { token ->
+            identity.copy(nonce = if (token == "first") first.nonce!! else second.nonce!!)
+        },ByteArray(32) { 7 },clock)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val results = listOf(executor.submit<AuthResult> { concurrent.google(first.challenge_id,"first",null) as AuthResult },
+                executor.submit<AuthResult> { concurrent.google(second.challenge_id,"second",null) as AuthResult })
+                .map { it.get(10,java.util.concurrent.TimeUnit.SECONDS) }
+            assertEquals(results[0].user.id,results[1].user.id)
+            db.transaction { c -> query(c,"SELECT (SELECT count(*) FROM app_users),(SELECT count(*) FROM profiles),(SELECT count(*) FROM auth_sessions)").use { q -> q.executeQuery().use { r ->
+                r.next(); assertEquals(1,r.getInt(1)); assertEquals(1,r.getInt(2)); assertEquals(2,r.getInt(3))
+            } } }
+        } finally { executor.shutdownNow(); assertTrue(executor.awaitTermination(10,java.util.concurrent.TimeUnit.SECONDS)) }
+    }
+    @Test fun concurrentGoogleReplayConsumesNonceOnlyOnce() {
+        val challenge = flows.googleChallenge(); identity = identity.copy(nonce = challenge.nonce!!)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val results = (1..2).map { executor.submit<String> {
+                try { flows.google(challenge.challenge_id,"fake",null); "SUCCESS" }
+                catch (failure: ApiFailure) { failure.code }
+            } }.map { it.get(10,java.util.concurrent.TimeUnit.SECONDS) }
+            assertEquals(listOf("CHALLENGE_INVALID","SUCCESS"),results.sorted())
+            db.transaction { c -> query(c,"SELECT count(*) FROM auth_sessions").use { q -> q.executeQuery().use { r -> r.next(); assertEquals(1,r.getInt(1)) } } }
+        } finally { executor.shutdownNow(); assertTrue(executor.awaitTermination(10,java.util.concurrent.TimeUnit.SECONDS)) }
+    }
     @Test fun googleWrongNonceAndUnverifiedAddressAreRejected() {
         val challenge = flows.googleChallenge()
         identity = identity.copy(nonce = "wrong")

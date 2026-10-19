@@ -206,7 +206,7 @@ class AuthFlows(private val db: Database, private val auth: AuthService, private
         val mail = query(c, "SELECT email FROM auth_challenges WHERE id=?", id).use { q ->
             q.executeQuery().use { r -> if (r.next()) r.getString(1) else throw ApiFailure(400, "CHALLENGE_INVALID") }
         }
-        emailLock(c, mail)
+        if (mail.isNotEmpty()) emailLock(c, mail)
         return query(c, "SELECT * FROM auth_challenges WHERE id=? FOR UPDATE", id).use { q -> q.executeQuery().use { r ->
             if (!r.next()) throw ApiFailure(400, "CHALLENGE_INVALID")
             Challenge(id, r.getString("purpose"), r.getString("email"), r.getObject("user_id", UUID::class.java),

@@ -10,7 +10,7 @@ Từ thư mục backend, chạy trong PowerShell dưới tài khoản Windows c�
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-local.ps1 -Action Configure
 ```
 
-Script đã có Web Client ID và Gmail bạn cung cấp. Nhập mật khẩu ứng dụng Gmail khi được hỏi; ký tự bị ẩn, không dùng mật khẩu đăng nhập Google. Script tạo `.env.local.xml` được Git ignore; mật khẩu và khóa HMAC được Windows DPAPI mã hóa cho user/máy hiện tại. Không chia sẻ file. `.env.example` chỉ mô tả biến, không tự được Gradle nạp.
+Script giữ Web Client ID mặc định và hỏi `Gmail sender email` khi Configure; nhập địa chỉ Gmail gửi thư của bạn rồi mật khẩu ứng dụng Gmail khi được hỏi. Có thể truyền `-SenderEmail` để bỏ câu hỏi địa chỉ; tham số cũ `-Sender` vẫn được hỗ trợ. Ký tự mật khẩu bị ẩn, không dùng mật khẩu đăng nhập Google. Script tạo `.env.local.xml` được Git ignore; mật khẩu và khóa HMAC được Windows DPAPI mã hóa cho user/máy hiện tại. Không chia sẻ file. `.env.example` chỉ mô tả biến, không tự được Gradle nạp. Cấu hình đã có tiếp tục được Run đọc như trước; không cần Configure lại hoặc tạo lại khóa HMAC sau bản sửa này.
 
 Không chạy Configure lại để đổi khóa khi challenge đang hoạt động. Để thay credentials có chủ đích, dừng backend, tự xóa file private rồi Configure lại; mọi challenge chưa hoàn tất sẽ hết hiệu lực khi đổi khóa, dữ liệu tài khoản không bị xóa.
 
