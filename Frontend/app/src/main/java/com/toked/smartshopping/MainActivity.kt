@@ -4,44 +4,34 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import com.toked.smartshopping.ui.theme.SmartShoppingTheme
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.toked.smartshopping.auth.AuthApi
+import com.toked.smartshopping.auth.SecureSessionStore
+import com.toked.smartshopping.auth.RegisterViewModel
+import com.toked.smartshopping.auth.RegisterScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            SmartShoppingTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        val authApi = AuthApi(BuildConfig.AUTH_API_BASE_URL, allowLocalHttp = BuildConfig.DEBUG)
+        val sessionStore = SecureSessionStore(applicationContext)
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                require(modelClass.isAssignableFrom(RegisterViewModel::class.java))
+                return RegisterViewModel(authApi, sessionStore) as T
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    SmartShoppingTheme {
-        Greeting("Android")
+        setContent {
+            SmartShoppingTheme {
+                val registerViewModel: RegisterViewModel = viewModel(factory = factory)
+                RegisterScreen(registerViewModel)
+            }
+        }
     }
 }

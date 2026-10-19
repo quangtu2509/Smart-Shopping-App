@@ -2,10 +2,12 @@ package com.toked.smartshopping.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
-
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// Color tokens from the saved Stitch registration design.
+val ShoppingGreen = Color(0xFF00694F)
+val ShoppingGreenContainer = Color(0xFF158465)
+val ShoppingInk = Color(0xFF121C2A)
+val ShoppingMuted = Color(0xFF55615D)
+val ShoppingBackground = Color(0xFFF8F9FF)
+val ShoppingField = Color(0xFFEFF4FF)
+val ShoppingBorder = Color(0xFFBDC9C2)
+val ShoppingBadge = Color(0xFFD8E5E0)

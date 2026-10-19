@@ -46,9 +46,14 @@ class ApiFailure(
     val refresh_expires_at: String,
     val auth_session_id: String,
 ) { override fun toString() = "AuthTokens(REDACTED)" }
-@Serializable class AuthResult(val user: UserDto, val profile: ProfileDto, val tokens: AuthTokens) {
+@Serializable class AuthResult(val user: UserDto, val profile: ProfileDto, val tokens: AuthTokens, val is_new_user: Boolean = false) {
     override fun toString() = "AuthResult(REDACTED)"
 }
+@Serializable class ChallengeDto(val challenge_id: String, val next_action: String,
+    val expires_at: String, val resend_after_seconds: Long = 60, val nonce: String? = null) {
+    override fun toString() = "ChallengeDto(REDACTED)"
+}
+@Serializable class ResetGrant(val reset_token: String) { override fun toString() = "ResetGrant(REDACTED)" }
 @Serializable data class MeDto(val user: UserDto, val profile: ProfileDto)
 @Serializable data class AuthSessionDto(
     val id: String, val created_at: String, val last_used_at: String,

@@ -15,7 +15,7 @@ class AuthService(
     private val policy: AuthPolicy = AuthPolicy(),
 ) {
     private val dummyHash = security.passwordHash("Dummy password for timing only")
-    private data class Account(val id: UUID, val email: String, val hash: String, val locked: Boolean)
+    private data class Account(val id: UUID, val email: String, val hash: String?, val verified: Boolean, val locked: Boolean, val temporaryLockUntil: Instant?)
     private data class Session(val id: UUID, val owner: UUID, val accessExpires: Instant,
         val refreshHash: String, val expires: Instant, val revoked: Boolean)
     private data class Principal(val user: Account, val session: Session)
@@ -45,14 +45,14 @@ class AuthService(
         if (remaining != null) throw ApiFailure(429, "RATE_LIMITED", retryAfter = remaining)
     }
 
-    fun register(email: String, password: String, confirm: String, device: String?): AuthResult {
+    internal fun register(email: String, password: String, confirm: String, device: String?): AuthResult {
         val normalized = validate(email, password, device, registration = true)
         if (password != confirm) invalid("confirm_password", "PASSWORD_MISMATCH")
         val hash = security.passwordHash(password)
         try {
             return db.transaction { connection ->
                 val id = UUID.randomUUID()
-                execute(connection, "INSERT INTO app_users(id,email,password_hash,created_at) VALUES (?,?,?,?)", id, normalized, hash, clock.instant())
+                execute(connection, "INSERT INTO app_users(id,email,password_hash,created_at,email_verified_at) VALUES (?,?,?,?,?)", id, normalized, hash, clock.instant(), clock.instant())
                 execute(connection, "INSERT INTO profiles(user_id) VALUES (?)", id)
                 AuthResult(UserDto(id.toString(), normalized, "ACTIVE"), ProfileDto(), createSession(connection, id, device))
             }
@@ -70,14 +70,18 @@ class AuthService(
                 statement.executeQuery().use { rows -> if (rows.next()) account(rows) else null }
             }
             val matches = security.verify(password, account?.hash ?: dummyHash)
-            if (account == null || !matches) {
-                if (account != null) execute(connection, """
+            if (account == null || account.hash == null || !matches) {
+                if (account?.hash != null) execute(connection, """
                     UPDATE app_users SET failed_logins=failed_logins+1,
                     locked_until=CASE WHEN failed_logins+1 >= ? THEN ? ELSE locked_until END WHERE id=?
                 """.trimIndent(), policy.lockThreshold, clock.instant().plusSeconds(policy.lockSeconds), account.id)
                 Attempt<AuthResult>(failure = ApiFailure(401, "INVALID_CREDENTIALS"))
             } else if (account.locked) {
-                Attempt(failure = ApiFailure(403, "ACCOUNT_LOCKED"))
+                Attempt(failure = ApiFailure(403, "ACCOUNT_LOCKED", retryAfter = account.temporaryLockUntil?.let {
+                    maxOf(1L, java.time.Duration.between(clock.instant(), it).seconds + 1)
+                }))
+            } else if (!account.verified) {
+                Attempt(failure = ApiFailure(403, "EMAIL_VERIFICATION_REQUIRED"))
             } else {
                 execute(connection, "UPDATE app_users SET failed_logins=0,locked_until=NULL WHERE id=?", account.id)
                 Attempt(AuthResult(userDto(account), profile(connection, account.id), createSession(connection, account.id, device)))
@@ -87,7 +91,7 @@ class AuthService(
 
     fun refresh(token: String): AuthTokens = db.transaction { connection ->
         val found = sessionForRefresh(connection, security.digest(token))
-        if (found == null || found.second.locked || found.first.revoked || found.first.expires <= clock.instant()) {
+        if (found == null || (found.second.locked || !found.second.verified) || found.first.revoked || found.first.expires <= clock.instant()) {
             Attempt<AuthTokens>(failure = ApiFailure(401, "REFRESH_TOKEN_INVALID"))
         } else {
             val (session, _) = found
@@ -156,16 +160,19 @@ class AuthService(
         val normalized = email.trim().lowercase(Locale.ROOT)
         if (normalized.length > 254 || !Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$").matches(normalized)) invalid("email", "INVALID_EMAIL")
         val length = password.codePointCount(0, password.length)
-        if (length > 128 || (registration && length < 15)) invalid("password", "INVALID_LENGTH")
+        if (length > 128 || (registration && !validNewPassword(password))) invalid("password", "INVALID_LENGTH")
         if (device != null && device.length > 100) invalid("device_name", "TOO_LONG")
         return normalized
     }
 
     private fun invalid(field: String, code: String): Nothing = throw ApiFailure(422, "VALIDATION_ERROR", listOf(FieldError(field, code)))
 
-    private fun account(rows: java.sql.ResultSet): Account = Account(rows.uuid("id"), rows.getString("email"),
-        rows.getString("password_hash"), rows.getString("status") == "LOCKED" ||
-            (rows.getTimestamp("locked_until")?.toInstant()?.isAfter(clock.instant()) == true))
+    private fun account(rows: java.sql.ResultSet): Account {
+        val permanent = rows.getString("status") == "LOCKED"
+        val until = rows.getTimestamp("locked_until")?.toInstant()
+        return Account(rows.uuid("id"), rows.getString("email"), rows.getString("password_hash"), rows.getTimestamp("email_verified_at") != null,
+            permanent || until?.isAfter(clock.instant()) == true, if (permanent) null else until)
+    }
 
     private fun userDto(account: Account) = UserDto(account.id.toString(), account.email, if (account.locked) "LOCKED" else "ACTIVE")
 
@@ -183,7 +190,7 @@ class AuthService(
         minOf(policy.accessSeconds, expires.epochSecond - clock.instant().epochSecond),
         refresh_token = security.token(), refresh_expires_at = expires.toString(), auth_session_id = id.toString())
 
-    private fun createSession(connection: Connection, owner: UUID, device: String?): AuthTokens {
+    internal fun createSession(connection: Connection, owner: UUID, device: String?): AuthTokens {
         val id = UUID.randomUUID()
         val now = clock.instant()
         val expires = now.plusSeconds(policy.sessionSeconds)
@@ -226,10 +233,28 @@ class AuthService(
             statement.executeQuery().use { it.next() }
         }
         if (!stillCurrent) throw ApiFailure(401, "ACCESS_TOKEN_INVALID")
-        if (session.revoked || user.locked) throw ApiFailure(401, "SESSION_REVOKED")
+        if (session.revoked || user.locked || !user.verified) throw ApiFailure(401, "SESSION_REVOKED")
         if (session.expires <= clock.instant() || session.accessExpires <= clock.instant()) throw ApiFailure(401, "ACCESS_TOKEN_EXPIRED")
         execute(connection, "UPDATE auth_sessions SET last_used_at=? WHERE id=?", clock.instant(), session.id)
         return Principal(user, session)
+    }
+
+    internal fun failedPassword(connection: Connection, owner: UUID) {
+        execute(connection, """UPDATE app_users SET failed_logins=failed_logins+1,
+            locked_until=CASE WHEN failed_logins+1 >= ? THEN ? ELSE locked_until END WHERE id=?""",
+            policy.lockThreshold,clock.instant().plusSeconds(policy.lockSeconds),owner)
+    }
+
+    internal fun complete(connection: Connection, id: UUID, device: String?, isNew: Boolean = false): AuthResult {
+        val account = query(connection, "SELECT * FROM app_users WHERE id=? FOR UPDATE", id).use { q ->
+            q.executeQuery().use { r -> if (r.next()) account(r) else throw ApiFailure(401, "INVALID_CREDENTIALS") }
+        }
+        if (account.locked) throw ApiFailure(403, "ACCOUNT_LOCKED", retryAfter = account.temporaryLockUntil?.let {
+            maxOf(1L, java.time.Duration.between(clock.instant(), it).seconds + 1)
+        })
+        if (!account.verified) throw ApiFailure(403, "EMAIL_VERIFICATION_REQUIRED")
+        execute(connection, "UPDATE app_users SET failed_logins=0,locked_until=NULL WHERE id=?", id)
+        return AuthResult(userDto(account), profile(connection, id), createSession(connection, id, device), isNew)
     }
 
     private fun decodeCursor(cursor: String, owner: UUID): Pair<Instant, UUID> {
