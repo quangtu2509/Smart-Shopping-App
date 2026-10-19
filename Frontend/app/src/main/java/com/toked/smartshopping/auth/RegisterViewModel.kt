@@ -156,7 +156,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
         }
     }
     fun showForgot() {
-        if (state.value.sending || state.value.account != null) return
+        if (state.value.sending || state.value.savingSession || state.value.account != null) return
         pendingSession = null
         resetToken = null
         mutableState.value = RegisterUiState(page = AuthPage.FORGOT,email = state.value.email,retrySeconds = state.value.retrySeconds)
@@ -247,14 +247,14 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
     }
 
     fun showLogin() {
-        if (state.value.sending || state.value.account != null) return
+        if (state.value.sending || state.value.savingSession || state.value.account != null) return
         pendingSession = null
         resetToken = null
         resendCountdown?.cancel()
         mutableState.value = RegisterUiState(page = AuthPage.LOGIN_ENTRY, email = state.value.email, retrySeconds = state.value.retrySeconds)
     }
     fun showRegister() {
-        if (state.value.sending || state.value.account != null) return
+        if (state.value.sending || state.value.savingSession || state.value.account != null) return
         pendingSession = null
         mutableState.value = RegisterUiState(page = AuthPage.REGISTER, email = state.value.email, retrySeconds = state.value.retrySeconds)
     }

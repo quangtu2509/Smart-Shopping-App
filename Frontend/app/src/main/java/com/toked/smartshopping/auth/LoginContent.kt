@@ -103,7 +103,7 @@ fun LoginContent(state: RegisterUiState, onEdit: (String, String) -> Unit, onSub
             Spacer(Modifier.height(28.dp))
             FlowRow(horizontalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
                 Text("Chưa có tài khoản?", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-                TextButton(onRegister, enabled = !state.sending) { Text("Đăng ký") }
+                TextButton(onRegister, enabled = fieldsEnabled) { Text("Đăng ký") }
             }
             Spacer(Modifier.height(12.dp))
             Surface(shape = CircleShape, color = colors.secondaryContainer) {

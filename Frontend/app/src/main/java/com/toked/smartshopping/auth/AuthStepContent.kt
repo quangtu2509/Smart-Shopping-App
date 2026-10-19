@@ -61,7 +61,7 @@ fun AuthStepContent(state: RegisterUiState, onEdit: (String,String) -> Unit, onS
     }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (!success) IconButton(onBack, enabled = !state.sending) {
+            if (!success) IconButton(onBack, enabled = enabled) {
                 Icon(painterResource(R.drawable.ic_auth_arrow_back), "Quay lại đăng nhập")
             } else Spacer(Modifier.width(48.dp))
             Text(if (isOtp) "Xác minh email" else if (success) "Tài khoản sẵn sàng" else "Tài khoản",
@@ -153,7 +153,7 @@ fun AuthStepContent(state: RegisterUiState, onEdit: (String,String) -> Unit, onS
                         TextButton(onResend,enabled = !state.sending && !state.savingSession && state.resendSeconds == 0 && state.retrySeconds == 0) {
                             Text(if (state.resendSeconds > 0) "Gửi lại mã sau ${state.resendSeconds}s" else "Gửi lại mã")
                         }
-                        TextButton(onBack,enabled = !state.sending) { Text("Đổi email hoặc bắt đầu lại") }
+                        TextButton(onBack,enabled = enabled) { Text("Đổi email hoặc bắt đầu lại") }
                     }
                 }
             }

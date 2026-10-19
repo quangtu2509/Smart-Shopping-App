@@ -35,6 +35,8 @@ RegisterViewModel giữ draft/password trong bộ nhớ qua Activity recreation,
 
 OkHttp tắt retry/redirect, request có timeout và cancellation theo viewModelScope. Không tự retry register/login/refresh sau mất response. Lỗi lưu sau đăng ký/đăng nhập cho retry lưu cục bộ, không gửi mutation lần hai. Email trùng/validation hiển thị tại field; 429 và ACCOUNT_LOCKED chờ Retry-After, đổi qua lại form không bỏ qua thời gian chờ. Login chỉ yêu cầu mật khẩu không rỗng/tối đa 128 ký tự; quy tắc tối thiểu 10 cùng hoa/thường/ký tự đặc biệt áp dụng khi tạo/reset mật khẩu, không dùng để từ chối credential đăng nhập cũ.
 
+Khi đã xác thực nhưng chưa lưu được phiên, app giữ phiên trong RAM và vô hiệu hóa Đăng ký/Đăng nhập/Quên mật khẩu, nút quay lại và bắt đầu lại liên quan. Bấm “Lưu lại phiên đăng nhập” chỉ thử ghi phiên đó, không gọi lại login, OTP, Google hoặc liên kết. Sau lưu thành công, tài khoản mới đến màn hình đăng ký thành công; tài khoản cũ đến Home. Phiên chờ không được lưu vào SavedStateHandle; nếu tiến trình bị kết thúc trước khi lưu thành công, người dùng cần bắt đầu lại xác thực.
+
 AuthSessionRepository kiểm tra GET /me trước khi mở dữ liệu owner lúc khởi động/resume; không mở Home từ cached account khi offline. Access hết hạn/invalid dùng một refresh có mutex và retry request bảo vệ tối đa một lần. Bản token cũ bị bỏ khỏi lưu trữ trước khi rotate; lưu cặp mới trước khi dùng. Nếu mất response refresh, đổi sai session/owner hoặc lưu thất bại, yêu cầu đăng nhập lại, không replay refresh token cũ. Phiên bị revoke/locked được xóa mà không refresh. Marker đăng xuất trong noBackupFilesDir ngăn ciphertext cũ được dùng lại nếu app dừng giữa lúc xóa phiên.
 
 ## Kiểm chứng

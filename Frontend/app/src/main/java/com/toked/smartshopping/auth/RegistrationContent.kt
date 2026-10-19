@@ -65,7 +65,7 @@ fun RegisterContent(
             Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onLogin, enabled = !state.sending) {
+            IconButton(onLogin, enabled = fieldsEnabled) {
                 Icon(painterResource(R.drawable.ic_auth_arrow_back), contentDescription = "Quay lại đăng nhập")
             }
             Text("Đăng ký", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium)
@@ -196,7 +196,7 @@ fun RegisterContent(
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("Đã có tài khoản?", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-                    TextButton(onLogin, enabled = !state.sending) { Text("Đăng nhập") }
+                    TextButton(onLogin, enabled = fieldsEnabled) { Text("Đăng nhập") }
                 }
                 Spacer(Modifier.height(8.dp))
                 Surface(shape = CircleShape, color = colors.secondaryContainer) {
