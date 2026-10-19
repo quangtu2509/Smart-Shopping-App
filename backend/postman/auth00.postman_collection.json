@@ -85,7 +85,22 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "pm.test(\"HTTP 429\",()=>pm.response.to.have.status(429));"
+              "const fixture = pm.environment.get(\"fixture_url\");",
+              "pm.test(fixture ? \"HTTP 429\" : \"HTTP 202 or 429\", () => {",
+              "  if (fixture) pm.response.to.have.status(429);",
+              "  else pm.expect(pm.response.code).to.be.oneOf([202, 429]);",
+              "});",
+              "if (!fixture && pm.response.code === 202) {",
+              "  const challengeId = pm.response.json().data?.challenge_id;",
+              "  const valid = typeof challengeId === \"string\" && challengeId.length > 0;",
+              "  pm.test(\"Resend returns a verification challenge\", () => pm.expect(valid).to.eql(true));",
+              "  if (valid) {",
+              "    pm.collectionVariables.set(\"challenge_id\", challengeId);",
+              "    pm.variables.unset(\"otp_code\");",
+              "    pm.environment.unset(\"otp_code\");",
+              "    pm.collectionVariables.unset(\"otp_code\");",
+              "  }",
+              "}"
             ]
           }
         }
@@ -886,7 +901,7 @@
         "url": "{{base_url}}/auth/password/reset",
         "body": {
           "mode": "raw",
-          "raw": "{\"reset_token\": \"{{reset_token}}\", \"password\": \"NewLocalTest!Ab\", \"confirm_password\": \"NewLocalTest!Ab\"}",
+          "raw": "{\"reset_token\": \"{{reset_token}}\", \"password\": \"{{reset_password}}\", \"confirm_password\": \"{{reset_password}}\"}",
           "options": {
             "raw": {
               "language": "json"
@@ -895,6 +910,22 @@
         }
       },
       "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.variables.get(\"reset_password\")) {",
+              "  if (!pm.environment.get(\"fixture_url\")) {",
+              "    console.warn(\"Set reset_password to your own private local password before sending a reset request. Never export populated variables.\");",
+              "    pm.execution.skipRequest();",
+              "  } else {",
+              "    pm.collectionVariables.set(\"reset_password\", \"ResetLocal!\" + pm.variables.replaceIn(\"{{$guid}}\"));",
+              "  }",
+              "}"
+            ]
+          }
+        },
         {
           "listen": "test",
           "script": {
@@ -919,7 +950,7 @@
         "url": "{{base_url}}/auth/password/reset",
         "body": {
           "mode": "raw",
-          "raw": "{\"reset_token\": \"{{reset_token}}\", \"password\": \"NewLocalTest!Ab\", \"confirm_password\": \"NewLocalTest!Ab\"}",
+          "raw": "{\"reset_token\": \"{{reset_token}}\", \"password\": \"{{reset_password}}\", \"confirm_password\": \"{{reset_password}}\"}",
           "options": {
             "raw": {
               "language": "json"
@@ -928,6 +959,22 @@
         }
       },
       "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (!pm.variables.get(\"reset_password\")) {",
+              "  if (!pm.environment.get(\"fixture_url\")) {",
+              "    console.warn(\"Set reset_password to your own private local password before sending a reset request. Never export populated variables.\");",
+              "    pm.execution.skipRequest();",
+              "  } else {",
+              "    pm.collectionVariables.set(\"reset_password\", \"ResetLocal!\" + pm.variables.replaceIn(\"{{$guid}}\"));",
+              "  }",
+              "}"
+            ]
+          }
+        },
         {
           "listen": "test",
           "script": {

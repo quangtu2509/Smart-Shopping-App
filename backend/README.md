@@ -71,11 +71,13 @@ python3 .agents/skills/gradle-run/scripts/gradle_run.py finish --workflow WORKFL
 
 `AuthIntegrationTest` kiểm tra transaction rollback, email trùng/concurrent register, password/hash, expiry, refresh replay/concurrency, owner, pagination, lock/rate limit và HTTP/schema. `AuthPostmanTest` chạy collection bằng Newman 6.2.1 qua Netty HTTP thật + PostgreSQL tạm, không mock database. Báo cáo cục bộ ở ignored `build/postman-local.log`, không xuất populated collection/environment.
 
+`GoogleTokenVerifierTest` dùng RSA/certificate giả lập và clock cố định để kiểm tra iat/exp ở biên 30/31 giây, giữ kiểm tra chữ ký/audience/issuer. `PostmanScriptsTest` chạy 10 Node script tests cho nhánh thủ công/fixture và Newman qua HTTP sink để xác nhận thiếu reset_password không gửi cả hai request reset/replay. Gradle theo dõi collection và thư mục src/test/javascript để thay script không bị bỏ qua do up-to-date.
+
 ## Postman thủ công
 
 AUTH-02 bổ sung Retry-After cho 403 ACCOUNT_LOCKED khi có thời điểm hết khóa tạm, chỉ sau khi mật khẩu hợp lệ. Khóa quản trị không có thời điểm mở khóa không trả header này; client cần hiển thị hướng liên hệ hỗ trợ thay vì tự đặt thời gian mở khóa. Không đổi JSON/schema/migration.
 
-Import `postman/auth00.postman_collection.json`, đặt base_url, run_email bằng Gmail bạn kiểm soát và run_password đạt policy. Collection có 27 request, gồm OTP/recovery và các API session, Google negative cases. Với Gmail thật, gửi từng request và nhập otp_code từ email; không Run Collection qua bước chờ OTP. Chỉ server test tự động có fixture_url để tự lấy mã. Không export biến có credentials. Xem [hướng dẫn từng bước](AUTH_SETUP.md).
+Import `postman/auth00.postman_collection.json`, đặt base_url, run_email bằng Gmail bạn kiểm soát và run_password đạt policy; trước reset tự nhập reset_password riêng trong biến local. Collection có 27 request, gồm OTP/recovery và các API session, Google negative cases. Hai request reset/replay không có mật khẩu mặc định; thiếu reset_password ở chế độ thủ công sẽ dừng trước khi gửi. Với Gmail thật, gửi từng request và nhập otp_code từ email; không Run Collection qua bước chờ OTP. Resend thủ công nhận 429 trong cooldown hoặc 202 sau cooldown; khi 202 phải nhập OTP mới vì mã cũ bị vô hiệu hóa. Fixture tự sinh mật khẩu mỗi lượt và kiểm tra resend đúng 429. Chỉ server test tự động có fixture_url để tự lấy mã. Không export biến có credentials. Xem [hướng dẫn từng bước](AUTH_SETUP.md).
 
 ## Email, Google và recovery
 

@@ -4,6 +4,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.http.HttpTransport
+import com.google.api.client.util.Clock
 import jakarta.mail.Message
 import jakarta.mail.Session
 import jakarta.mail.internet.InternetAddress
@@ -20,9 +21,9 @@ fun interface AuthMailer { fun send(email: String, code: String, purpose: String
 data class GoogleIdentity(val subject: String, val email: String, val verified: Boolean, val nonce: String)
 fun interface GoogleVerifier { fun verify(token: String): GoogleIdentity }
 
-class GoogleTokenVerifier(clientId: String, transport: HttpTransport = GoogleNetHttpTransport.newTrustedTransport()) : GoogleVerifier {
+class GoogleTokenVerifier(clientId: String, transport: HttpTransport = GoogleNetHttpTransport.newTrustedTransport(), clock: Clock = Clock.SYSTEM) : GoogleVerifier {
     private val verifier = GoogleIdTokenVerifier.Builder(transport, GsonFactory.getDefaultInstance())
-        .setAudience(listOf(clientId)).setAcceptableTimeSkewSeconds(0).build()
+        .setAudience(listOf(clientId)).setClock(clock).setAcceptableTimeSkewSeconds(30).build()
     override fun verify(token: String): GoogleIdentity {
         if (token.length > 8192) throw ApiFailure(401, "GOOGLE_TOKEN_INVALID")
         val payload = try { verifier.verify(token)?.payload } catch (_: Exception) { null }

@@ -36,6 +36,8 @@ dependencies {
 }
 
 tasks.test {
+    inputs.file("postman/auth00.postman_collection.json")
+    inputs.dir("src/test/javascript")
     // PostgreSQL integration is mandatory: absence of a test URL is a failure, not a skip.
     maxParallelForks = 1
     testLogging { events("failed", "skipped"); showStandardStreams = false }
