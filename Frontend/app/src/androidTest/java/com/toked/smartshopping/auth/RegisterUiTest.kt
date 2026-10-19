@@ -163,7 +163,7 @@ class RegisterUiTest {
             assertTrue(captureFixtureScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
         }
         compose.onNodeWithText("Bỏ qua và tiếp tục").performClick()
-        compose.onNodeWithText("Danh sách mua sắm").assertExists()
+        compose.onNodeWithText("Tạo kế hoạch mua sắm").assertExists()
     }
 
     @Test fun encryptedStorageRoundTripAndTamperingFailsClosed() = runBlocking {
@@ -224,7 +224,7 @@ class RegisterUiTest {
         assertEquals(email, restored.state.value.account!!.email)
         assertEquals("", vm.state.value.password)
         compose.onNodeWithText("Bỏ qua và tiếp tục").performClick()
-        compose.onNodeWithText("Danh sách mua sắm").assertExists()
+        compose.onNodeWithText("Tạo kế hoạch mua sắm").assertExists()
         runBlocking { store.clear() }
     }
 }

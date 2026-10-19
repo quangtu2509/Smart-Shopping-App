@@ -139,6 +139,7 @@ class LoginUiTest {
         compose.onNodeWithText("Đăng nhập").performScrollTo().performClick()
         compose.waitUntil(30000) { vm.state.value.page == AuthPage.HOME_ENTRY || vm.state.value.message != null }
         assertEquals(AuthPage.HOME_ENTRY, vm.state.value.page)
+        compose.onNodeWithText("Cá nhân").performClick()
         compose.onNodeWithText(email).assertExists()
         val saved = runBlocking { store.load()!! }
         assertEquals(registration.account.userId, saved.account.userId)
@@ -151,6 +152,7 @@ class LoginUiTest {
         assertNotEquals(saved.refreshToken, rotated.refreshToken)
         assertEquals(saved.sessionId, rotated.sessionId)
         assertEquals(email, runBlocking { api.me(rotated.accessToken) }.email)
+        compose.onNodeWithText("Cá nhân").performClick()
         compose.onNodeWithText("Phiên đăng nhập").performClick()
         compose.waitUntil(15000) { !vm.state.value.sending && vm.state.value.sessions.size >= 2 }
         compose.onNodeWithText("Thu hồi phiên").performScrollTo().performClick()

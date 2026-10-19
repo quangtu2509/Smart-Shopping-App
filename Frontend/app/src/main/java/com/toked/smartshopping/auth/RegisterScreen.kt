@@ -20,6 +20,7 @@ import kotlinx.coroutines.CancellationException
 import android.widget.Toast
 import androidx.lifecycle.Lifecycle
 import com.toked.smartshopping.ui.theme.SmartShoppingTheme
+import com.toked.smartshopping.home.HomeContent
 
 @Composable
 fun RegisterScreen(viewModel: RegisterViewModel, modifier: Modifier = Modifier) {
@@ -73,6 +74,20 @@ fun AuthContent(
     onResend: () -> Unit = {},
     onContinue: () -> Unit = {},
 ) {
+    if (state.page == AuthPage.HOME_ENTRY) {
+        key(state.account?.userId) {
+            HomeContent(
+                email = state.account?.email.orEmpty(),
+                maxStores = state.account?.maxStores ?: 3,
+                modeLabel = modeLabel(state.account?.mode),
+                onProfile = onProfile,
+                onSessions = onSessions,
+                onLogout = { onLogout(false) },
+                modifier = modifier,
+            )
+        }
+        return
+    }
     if (state.page in setOf(AuthPage.FORGOT,AuthPage.VERIFY_EMAIL,AuthPage.VERIFY_RESET,AuthPage.RESET_PASSWORD,AuthPage.LINK_GOOGLE,AuthPage.REGISTER_SUCCESS)) {
         Surface(modifier.fillMaxSize(),color = MaterialTheme.colorScheme.background) {
             AuthStepContent(state,onEdit,onSubmit,onLogin,onResend,onContinue,Modifier.fillMaxSize().safeDrawingPadding().imePadding())
@@ -127,14 +142,7 @@ fun AuthContent(
                         }
                         Button(onSkip, modifier = Modifier.fillMaxWidth()) { Text("Bỏ qua và tiếp tục") }
                     }
-                    AuthPage.HOME_ENTRY -> {
-                        Text("Danh sách mua sắm", style = MaterialTheme.typography.headlineMedium)
-                        Text(state.account?.email.orEmpty(), style = MaterialTheme.typography.titleMedium)
-                        Text("Chưa có kế hoạch mua sắm.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(onProfile) { Text("Hồ sơ mua sắm") }
-                        OutlinedButton(onSessions) { Text("Phiên đăng nhập") }
-                        OutlinedButton({ onLogout(false) }) { Text("Đăng xuất") }
-                    }
+                    AuthPage.HOME_ENTRY -> Unit
                     AuthPage.SESSIONS -> SessionsContent(state, onSessions, onMoreSessions, onRevoke, onLogout, onHome)
                 }
             }

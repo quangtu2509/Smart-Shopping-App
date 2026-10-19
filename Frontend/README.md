@@ -1,5 +1,7 @@
 # Android — AUTH-01/02
 
+SC-04 Home đã có giao diện Compose theo Stitch: header, tìm kiếm, tạo kế hoạch, các khu vực kế hoạch/giá/lịch sử/mẫu và năm mục điều hướng. Cá nhân mở hồ sơ mặc định, quản lý phiên và xác nhận đăng xuất. Dữ liệu nghiệp vụ chưa được tích hợp; Home dùng trạng thái rỗng, các đích chưa triển khai có thông báo rõ, không hiển thị số liệu mẫu như dữ liệu thật. Source: `app/src/main/java/com/toked/smartshopping/home/HomeContent.kt`; UI tests: `app/src/androidTest/java/com/toked/smartshopping/home/HomeUiTest.kt`.
+
 Mở project Frontend trong Android Studio. Compile/target SDK 36, min SDK 26. App có đăng ký/đăng nhập Compose theo Stitch, validation, API-AUTH-01–16, encrypted session, refresh và quản lý phiên. Đăng ký qua OTP/Google → màn hình thành công → onboarding/default Profile; đăng nhập và khôi phục phiên vào Home đúng User. Chỉnh Profile và Home nghiệp vụ đầy đủ vẫn thuộc các task riêng.
 
 Người dùng xác nhận hoàn tất AUTH ngày 19/10/2026. Xem [phạm vi, tương thích migration, kết quả kiểm chứng và ảnh fixture](docs/auth/README.md); xác nhận thực tế của người dùng được ghi riêng với test tự động.
