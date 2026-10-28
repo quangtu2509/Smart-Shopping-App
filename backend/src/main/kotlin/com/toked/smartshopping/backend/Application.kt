@@ -17,11 +17,22 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
 import java.util.UUID
+import com.toked.smartshopping.backend.catalog.*
 
 private val wireJson = Json { encodeDefaults = true; explicitNulls = true }
 private val requestIdKey = io.ktor.util.AttributeKey<String>("request-id")
 
-fun main() {
+suspend fun main(args: Array<String>) {
+    require(args.isEmpty() || args.contentEquals(arrayOf("--check-catalog"))) { "Unknown backend command" }
+    val catalogConfig = CatalogFlowConfig.fromEnvironment()
+    if (args.contentEquals(arrayOf("--check-catalog"))) {
+        val configured = catalogConfig ?: throw ProviderFailure(ProviderFailureCode.UNCONFIGURED)
+        CatalogFlowClient(configured).use { provider ->
+            try { println(checkCatalogConnection(provider)) }
+            catch (failure: ProviderFailure) { error("CatalogFlow check failed: ${failure.code}; retry_after_seconds=${failure.retryAfterSeconds}") }
+        }
+        return
+    }
     fun required(name: String) = System.getenv(name)?.takeIf { it.isNotBlank() }
         ?: error("Set $name in the local environment before starting the backend")
     fun number(name: String, default: Long) = System.getenv(name)?.toLong() ?: default
@@ -40,12 +51,16 @@ fun main() {
             number("LOGIN_LOCK_THRESHOLD",10).toInt(), number("LOGIN_LOCK_SECONDS",900))
         val service = AuthService(db, policy = policy)
         val flows = AuthFlows(db, service, mailer, GoogleTokenVerifier(googleClientId), challengeKey)
-        embeddedServer(Netty, host = System.getenv("HTTP_HOST") ?: "127.0.0.1",
-            port = number("HTTP_PORT",8080).toInt()) { authModule(service, flows) }.start(wait = true)
+        val catalog = catalogConfig?.let(::CatalogFlowClient)
+        try {
+            embeddedServer(Netty, host = System.getenv("HTTP_HOST") ?: "127.0.0.1",
+                port = number("HTTP_PORT",8080).toInt()) { authModule(service, flows, catalog) }.start(wait = true)
+        } finally { catalog?.close() }
     } finally { db.close() }
 }
 
-fun Application.authModule(service: AuthService, flows: AuthFlows? = null) {
+fun Application.authModule(service: AuthService, flows: AuthFlows? = null, catalog: CatalogProvider? = null) {
+    if (catalog != null) attributes.put(catalogProviderKey, catalog)
     val profiles = service.shoppingProfiles()
     val plans = service.shoppingPlans()
     fun extended() = flows ?: throw ApiFailure(503, "AUTH_PROVIDER_UNCONFIGURED")

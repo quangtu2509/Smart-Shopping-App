@@ -1,5 +1,7 @@
 # Backend local — Auth
 
+CatalogFlow đã có adapter Kotlin và kho khóa DPAPI riêng; xem [hướng dẫn](CATALOGFLOW_SETUP.md). CheckCatalog kiểm tra độc lập trước auth/database; Product Service/API/UI thuộc CATALOG-01.
+
 Ktor + PostgreSQL 18, JDBC/HikariCP và Flyway. Backend là Gradle project riêng, Android giữ compile/target SDK 36. JDK daemon/toolchain 25, Java/Kotlin bytecode target 17. Migration nằm ở `src/main/resources/db/migration/`; Flyway tự áp dụng khi backend khởi động. Không tạo bảng thủ công bằng pgAdmin.
 
 PLAN-01 đã có API Draft create/list/get/patch, retailer reference và đọc Store nội bộ phục vụ chọn chi nhánh. Xem [PLAN_API](PLAN_API.md) và [giao diện Android](../Frontend/docs/plan/README.md). Dùng lại schema V5; catalog/provider/GPS/nearest-store vẫn thuộc task sau. Backend development đang chạy bản cũ cần khởi động lại để nạp API mới.

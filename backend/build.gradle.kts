@@ -42,6 +42,7 @@ tasks.test {
     inputs.file("postman/plan01.postman_collection.json")
     inputs.dir("src/test/javascript")
     inputs.file("scripts/run-local.ps1")
+    inputs.file("scripts/catalogflow-local.ps1")
     inputs.dir("src/test/powershell")
     // PostgreSQL integration is mandatory: absence of a test URL is a failure, not a skip.
     maxParallelForks = 1

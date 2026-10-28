@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Configure','Run')][string]$Action = 'Run',
+    [ValidateSet('Configure','Run','CheckCatalog')][string]$Action = 'Run',
     [Alias('Sender')][string]$SenderEmail = '',
     [string]$WebClientId = '803153983048-beki7emtkn0ph45sjm5bs4emud5mkn1o.apps.googleusercontent.com'
 )
@@ -12,6 +12,49 @@ function Get-SecretText([Security.SecureString]$Secret) {
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secret)
     try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
+
+function Import-CatalogFlowEnvironment {
+    # Explicit process credentials take precedence. Do not print or pass the key as a CLI argument.
+    if (-not [string]::IsNullOrWhiteSpace($env:CATALOGFLOW_API_KEY)) { return }
+    $providerPath = Join-Path $backendRoot '.env.catalogflow.local.xml'
+    if (-not (Test-Path -LiteralPath $providerPath)) { return }
+    try { $providerConfig = Import-Clixml -LiteralPath $providerPath }
+    catch { throw 'Cannot load CatalogFlow configuration. Use the Windows user that configured it.' }
+    if ($providerConfig.ApiKey -isnot [Security.SecureString] -or $providerConfig.ApiKey.Length -eq 0) {
+        throw 'Invalid local CatalogFlow configuration. Run catalogflow-local.ps1 -Action Configure -Replace.'
+    }
+    $providerUri = $null
+    if (-not [Uri]::TryCreate($providerConfig.BaseUrl,[UriKind]::Absolute,[ref]$providerUri) -or
+        $providerUri.Scheme -ne 'https' -or $providerUri.UserInfo -ne '' -or $providerUri.AbsolutePath -ne '/' -or
+        $providerUri.Query -ne '' -or $providerUri.Fragment -ne '') { throw 'Invalid CatalogFlow HTTPS origin.' }
+    if (-not [string]::IsNullOrWhiteSpace($env:CATALOGFLOW_BASE_URL) -and
+        $env:CATALOGFLOW_BASE_URL.TrimEnd('/') -ne $providerConfig.BaseUrl.TrimEnd('/')) {
+        throw 'CATALOGFLOW_BASE_URL differs from the saved key origin. Configure both credentials explicitly.'
+    }
+    try {
+        $env:CATALOGFLOW_BASE_URL = $providerConfig.BaseUrl
+        $env:CATALOGFLOW_API_KEY = Get-SecretText $providerConfig.ApiKey
+    } finally { $providerConfig.ApiKey.Dispose() }
+}
+
+if ($Action -eq 'CheckCatalog') {
+    $providerNames = @('CATALOGFLOW_API_KEY','CATALOGFLOW_BASE_URL')
+    $providerPrevious = @{}
+    foreach ($name in $providerNames) { $providerPrevious[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
+    try {
+        Import-CatalogFlowEnvironment
+        if ([string]::IsNullOrWhiteSpace($env:CATALOGFLOW_API_KEY)) { throw 'Configure CatalogFlow using catalogflow-local.ps1 -Action Configure first.' }
+        Push-Location -LiteralPath $backendRoot
+        try {
+            & .\gradlew.bat run '--args=--check-catalog'
+            if ($LASTEXITCODE -ne 0) { throw 'CatalogFlow Kotlin check failed. See the safe failure code above.' }
+        }
+        finally { Pop-Location }
+    } finally {
+        foreach ($name in $providerNames) { [Environment]::SetEnvironmentVariable($name,$providerPrevious[$name],'Process') }
+    }
+    return
 }
 
 if ($Action -eq 'Configure') {
@@ -34,10 +77,11 @@ if ($Action -eq 'Configure') {
 }
 if (-not (Test-Path -LiteralPath $privatePath)) { throw 'Run this script with -Action Configure first.' }
 $config = Import-Clixml -LiteralPath $privatePath
-$names = @('GOOGLE_WEB_CLIENT_ID','SMTP_HOST','SMTP_PORT','SMTP_USERNAME','SMTP_PASSWORD','AUTH_CHALLENGE_KEY','DB_PASSWORD')
+$names = @('GOOGLE_WEB_CLIENT_ID','SMTP_HOST','SMTP_PORT','SMTP_USERNAME','SMTP_PASSWORD','AUTH_CHALLENGE_KEY','DB_PASSWORD','CATALOGFLOW_API_KEY','CATALOGFLOW_BASE_URL')
 $previous = @{}
 foreach ($name in $names) { $previous[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
 try {
+    Import-CatalogFlowEnvironment
     $env:GOOGLE_WEB_CLIENT_ID = $config.WebClientId
     $env:SMTP_HOST = 'smtp.gmail.com'
     $env:SMTP_PORT = '587'

@@ -8,8 +8,14 @@ import kotlin.test.assertTrue
 
 class LocalConfigurationScriptTest {
     @Test fun configureAndRunKeepSenderAndPrivateConfigurationCompatible() {
-        val builder = ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "src/test/powershell/run-local.tests.ps1")
-            .redirectErrorStream(true).redirectOutput(File("build/local-configuration-tests.log"))
+        runFixture("run-local.tests.ps1", "local-configuration-tests.log")
+    }
+    @Test fun catalogProbeKeepsCredentialsEncryptedAndOutputPrivate() {
+        runFixture("catalogflow-local.tests.ps1", "catalogflow-configuration-tests.log")
+    }
+    private fun runFixture(script: String, log: String) {
+        val builder = ProcessBuilder("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "src/test/powershell/$script")
+            .redirectErrorStream(true).redirectOutput(File("build/$log"))
         // A daemon launched by PowerShell 7 may carry modules incompatible with Windows PowerShell 5.1.
         builder.environment().remove("PSModulePath")
         val process = builder.start()
