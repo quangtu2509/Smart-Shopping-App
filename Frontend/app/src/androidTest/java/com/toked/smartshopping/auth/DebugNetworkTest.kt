@@ -21,10 +21,10 @@ class DebugNetworkTest {
     }
 
     /** Opt-in, read-only reachability check. No credentials, account creation or database fixtures. */
-    @Test fun emulatorReachesHostBackendWithoutAuthorization() {
+    @Test fun localBackendIsReachableWithoutAuthorization() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("localBackendProbe") == "true")
         val url = URL(BuildConfig.AUTH_API_BASE_URL.trimEnd('/') + "/me")
-        assertEquals("10.0.2.2", url.host)
+        assertTrue("Probe requires an explicitly allowed local host", url.host in setOf("127.0.0.1", "localhost", "10.0.2.2"))
         assertEquals(8080, url.port)
         assertEquals("/api/v1/me", url.path)
         val connection = url.openConnection() as HttpURLConnection

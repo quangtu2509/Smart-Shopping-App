@@ -13,7 +13,7 @@ Người dùng xác nhận hoàn tất AUTH ngày 19/10/2026. Xem [phạm vi, t�
 
 Google cần máy ảo có Google Play Services, tài khoản Google và Internet/DNS hoạt động. Đổi URL backend không tự sửa lỗi mạng tới Google.
 
-Nếu dùng điện thoại USB, ghi đè Gradle property `smartShoppingDebugApiBaseUrl=http://127.0.0.1:8080/api/v1/` khi build debug, rồi dùng `adb -s SERIAL reverse tcp:8080 tcp:8080`. Property này chỉ dành cho local/test; không đặt URL fixture vào cấu hình mặc định được commit hoặc cấu hình Android Studio dùng hằng ngày. HTTP debug chỉ cho phép đúng `127.0.0.1`, `localhost`, `10.0.2.2`; HTTPS vẫn được hỗ trợ.
+Để dùng **cùng một bản app trên emulator, điện thoại USB và Wireless debugging qua Wi-Fi**, xem [hướng dẫn chạy chung thiết bị](docs/local-backend-devices.md). Build với `smartShoppingDebugApiBaseUrl=http://127.0.0.1:8080/api/v1/` và reverse cổng 8080 trên từng thiết bị. Giữ property này trong mỗi lệnh build; nút Run mặc định vẫn dùng `10.0.2.2`. HTTP debug chỉ cho phép đúng `127.0.0.1`, `localhost`, `10.0.2.2`; HTTPS vẫn được hỗ trợ.
 
 3. Nhập Gmail chưa dùng, mật khẩu 10–128 ký tự gồm hoa/thường/ký tự đặc biệt và xác nhận khớp. Password không trim; email được backend normalize. Nhập mã trong email, xem “Đăng ký thành công!” rồi “Tiếp tục” vào “Thiết lập mua sắm”, hiển thị default tối đa 3 cửa hàng/BALANCED. “Bỏ qua và tiếp tục” đi tới Home entry; form chỉnh Profile sẽ được làm riêng.
 
@@ -61,7 +61,7 @@ Ví dụ sau khi đã khởi động fixture riêng và reverse 18080, chạy t�
 .\gradlew.bat :app:connectedDebugAndroidTest "-PsmartShoppingDebugApiBaseUrl=http://127.0.0.1:18080/api/v1/" "-Pandroid.testInstrumentationRunnerArguments.authIntegrationBaseUrl=http://127.0.0.1:18080/api/v1/"
 ```
 
-DebugNetworkTest kiểm tra network policy trên Android; bước GET `/me` không bearer chỉ chạy khi truyền `-Pandroid.testInstrumentationRunnerArguments.localBackendProbe=true`. Probe này dùng debug mặc định qua `10.0.2.2:8080`, mong đợi 401 AUTH_REQUIRED, không tạo tài khoản/phiên hoặc truy cập dữ liệu database. Không truyền localBackendProbe thì probe skip; kiểm tra policy vẫn chạy. Sau test với URL fixture, Run/build lại không có property ghi đè trước khi dùng app thường ngày.
+DebugNetworkTest kiểm tra network policy trên Android; bước GET `/me` không bearer chỉ chạy khi truyền `-Pandroid.testInstrumentationRunnerArguments.localBackendProbe=true`. Probe chấp nhận địa chỉ local đã cho phép trên cổng 8080: debug mặc định qua `10.0.2.2` hoặc build ghi đè `127.0.0.1` qua adb reverse cho emulator/USB/Wi-Fi; mong đợi 401 AUTH_REQUIRED, không tạo tài khoản/phiên hoặc truy cập dữ liệu database. Không truyền localBackendProbe thì probe skip; kiểm tra policy vẫn chạy. Sau test với URL fixture, Run/build lại không có property ghi đè trước khi dùng app thường ngày.
 
 Agent chạy task qua [gradle-run](../../.agents/skills/gradle-run/SKILL.md). Cần chuẩn bị backend bằng task installDist và PostgreSQL tạm theo backend guide, chạy Netty riêng cổng 18080. Sau test dừng đúng server test, dọn PostgreSQL test và adb reverse; giữ credentials development trên máy người dùng.
 
