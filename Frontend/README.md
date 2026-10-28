@@ -74,3 +74,7 @@ AuthStepContent nhận state/callback thuần cho OTP 6 ô, forgot, reset, Googl
 GoogleSignIn dùng Credential Manager, nonce từ backend, Web Client ID trong BuildConfig; không có SMTP password trong APK. Logout xóa trạng thái Google cục bộ. ViewModel giữ challenge/reset grant trong RAM, không SavedStateHandle; pending save retry không gọi lại API single-use. AuthUiEvent Channel một collector theo lifecycle chuyển toast thành công sau khi lưu phiên, không phát khi restore.
 
 Đọc [AUTH_SETUP](../backend/AUTH_SETUP.md) để nhập SMTP secret trên máy và kiểm thử Google thật. Tài khoản cũ chưa verified phải qua OTP; dữ liệu cũ giữ nguyên. Bản chỉ dùng Google không có local password.
+
+## DATA-00 — Hợp đồng nhận dữ liệu
+
+`shopping/ShoppingContracts.kt` có PlanView/Offer/item/BudgetSummary, Money BigDecimal và Quantity, giữ decimal string/null từ server. Tổng budget lấy từ server; chưa nối endpoint hoặc giao diện Plan/List/Session. ShoppingContractsTest dùng JSON fixture chung với backend. [Nền dữ liệu](../backend/DATA_FOUNDATION.md) ghi schema và phạm vi tích hợp còn lại. Cấu hình emulator/USB/Wi-Fi hiện tại không đổi.

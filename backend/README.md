@@ -90,3 +90,7 @@ API-PROFILE-01/02: GET/PATCH /api/v1/me/shopping-profile; API-REF-02/03: GET /ap
 Migration V4 giữ tài khoản/Profile/session, tạo shopping_categories, shopping_brands và profile_requests. Hai bảng reference khởi tạo trống, DATA-00 đã có schema; dữ liệu thật chờ quy trình PROVIDER-00/CATALOG-01; test seed chỉ trong src/test. Form vẫn lưu được các trường khác khi chưa có reference. ID tham chiếu mới phải ACTIVE/tồn tại, sở thích và né tránh không giao nhau. Reference có q/cursor/limit 1–100; categories có parent_id, cursor gắn owner và bộ lọc.
 
 ShoppingProfileTest chạy PostgreSQL tạm qua cùng script test-local; ShoppingProfilePostmanTest dùng collection profile01.postman_collection.json với 14 request/42 assertions. File environment Newman có token chỉ tồn tại tạm trong ignored build, bị xóa sau chạy; không export token. Xem [Profile guide](../Frontend/docs/profile/README.md) cho consumer Android, trạng thái UI và giới hạn dữ liệu thật.
+
+## DATA-00 — Storage primitives
+
+V5 bổ sung Plan/item/offer, decimal currency rules, snapshot/revision, idempotency/audit và nền Session/History. Không đăng ký endpoint Plan/List/Finalize hoặc gọi catalog provider; xem [DATA_FOUNDATION](DATA_FOUNDATION.md) cho schema, transaction API, primitive snapshot và điều kiện tích hợp phía sau. API auth/Profile không đổi. Database development chỉ nhận V5 khi bạn khởi động lại backend; agent kiểm chứng riêng trên PostgreSQL tạm 55432.
