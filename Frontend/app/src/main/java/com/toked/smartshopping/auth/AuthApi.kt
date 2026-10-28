@@ -47,6 +47,9 @@ sealed class AuthFailure : Exception() {
 }
 
 interface AuthGateway {
+    suspend fun shoppingProfile(accessToken: String): ShoppingProfile = throw AuthFailure.Unconfigured()
+    suspend fun saveShoppingProfile(accessToken: String, patch: ProfilePatch): ShoppingProfile = throw AuthFailure.Unconfigured()
+    suspend fun references(accessToken: String, kind: String, cursor: String? = null): ReferencePage = throw AuthFailure.Unconfigured()
     suspend fun verifyEmail(id: String, code: String): AuthSession = throw AuthFailure.Unconfigured()
     suspend fun resend(id: String): AuthChallenge = throw AuthFailure.Unconfigured()
     suspend fun forgot(email: String): AuthChallenge = throw AuthFailure.Unconfigured()
@@ -171,11 +174,32 @@ class AuthApi(baseUrl: String, allowLocalHttp: Boolean = false) : AuthGateway {
     } catch (_: org.json.JSONException) { throw AuthFailure.InvalidResponse() }
     catch (_: IllegalArgumentException) { throw AuthFailure.InvalidResponse() }
 
+    override suspend fun shoppingProfile(accessToken: String): ShoppingProfile = profileResponse(request("me/shopping-profile", accessToken = accessToken))
+    override suspend fun saveShoppingProfile(accessToken: String, patch: ProfilePatch): ShoppingProfile = profileResponse(
+        request("me/shopping-profile", "PATCH", patch.body, accessToken, idempotencyKey = patch.key))
+    private fun profileResponse(response: String): ShoppingProfile = try {
+        ShoppingProfile.decode(JSONObject(response).getJSONObject("data"))
+    } catch (_: org.json.JSONException) { throw AuthFailure.InvalidResponse() }
+      catch (_: IllegalArgumentException) { throw AuthFailure.InvalidResponse() }
+    override suspend fun references(accessToken: String, kind: String, cursor: String?): ReferencePage {
+        require(kind in setOf("categories", "brands"))
+        return try {
+            val data = JSONObject(request(kind, accessToken = accessToken, cursor = cursor)).getJSONObject("data")
+            val items = data.getJSONArray("items")
+            ReferencePage((0 until items.length()).map { index -> items.getJSONObject(index).let {
+                ProfileReference(it.getString("id"), it.getString("name"), it.getString("status"))
+            } }, if (data.isNull("next_cursor")) null else data.getString("next_cursor"))
+        } catch (_: org.json.JSONException) { throw AuthFailure.InvalidResponse() }
+    }
+
     private suspend fun request(path: String, method: String = "GET", body: String? = null,
-        accessToken: String? = null, expected: Int = 200, cursor: String? = null, segment: String? = null): String {
+        accessToken: String? = null, expected: Int = 200, cursor: String? = null, segment: String? = null,
+        idempotencyKey: String? = null, query: Map<String, String?> = emptyMap(), segments: List<String> = emptyList()): String {
         val url = (base?.resolve(path) ?: throw AuthFailure.Unconfigured()).newBuilder().apply {
             if (segment != null) addPathSegment(segment)
-            if (path == "auth/sessions" && method == "GET") {
+            segments.forEach { addPathSegment(it) }
+            query.forEach { (key, value) -> if (value != null) addQueryParameter(key, value) }
+            if (query.isEmpty() && path in setOf("auth/sessions", "categories", "brands") && method == "GET") {
                 addQueryParameter("limit", "20")
                 if (cursor != null) addQueryParameter("cursor", cursor)
             }
@@ -183,6 +207,7 @@ class AuthApi(baseUrl: String, allowLocalHttp: Boolean = false) : AuthGateway {
         val builder = Request.Builder().url(url).header("Accept", "application/json")
         builder.method(method, body?.toRequestBody("application/json; charset=utf-8".toMediaType()))
         if (accessToken != null) builder.header("Authorization", "Bearer $accessToken")
+        if (idempotencyKey != null) builder.header("Idempotency-Key", idempotencyKey)
         val call = client.newCall(builder.build())
         return suspendCancellableCoroutine { continuation ->
             continuation.invokeOnCancellation { call.cancel() }

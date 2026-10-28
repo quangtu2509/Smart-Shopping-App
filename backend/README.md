@@ -82,3 +82,11 @@ Import `postman/auth00.postman_collection.json`, đặt base_url, run_email bằ
 ## Email, Google và recovery
 
 AuthFlows xử lý OTP/HMAC, resend, Google nonce/link và reset; AuthProviders tích hợp SMTP STARTTLS + Google ID token verifier. Mail/Google gọi ngoài transaction. AuthFixtureServer chỉ nằm ở src/test, bind 127.0.0.1:18080 với PostgreSQL tạm 55432, fake mail và không nhận Google thật; fixture không có trong application distribution. API-AUTH-09–16 và cách test Desktop xem [AUTH_SETUP](AUTH_SETUP.md). Token Google/password/OTP không được ghi log.
+
+## PROFILE-01
+
+API-PROFILE-01/02: GET/PATCH /api/v1/me/shopping-profile; API-REF-02/03: GET /api/v1/categories, /brands. Tất cả yêu cầu bearer. PATCH nhận expected_version và Idempotency-Key; null xóa household_size/default_period, field vắng giữ nguyên. Input không hợp lệ trả 422 field_errors, version cũ trả 409 VERSION_CONFLICT với details.current_version, replay key/payload trả bản kết quả cũ, key cũ/payload khác trả 409 IDEMPOTENCY_KEY_REUSED. Key có phạm vi owner + endpoint và giữ ít nhất 24 giờ. Không lưu auth token trong replay record.
+
+Migration V4 giữ tài khoản/Profile/session, tạo shopping_categories, shopping_brands và profile_requests. Hai bảng reference khởi tạo trống, DATA-00 đã có schema; dữ liệu thật chờ quy trình PROVIDER-00/CATALOG-01; test seed chỉ trong src/test. Form vẫn lưu được các trường khác khi chưa có reference. ID tham chiếu mới phải ACTIVE/tồn tại, sở thích và né tránh không giao nhau. Reference có q/cursor/limit 1–100; categories có parent_id, cursor gắn owner và bộ lọc.
+
+ShoppingProfileTest chạy PostgreSQL tạm qua cùng script test-local; ShoppingProfilePostmanTest dùng collection profile01.postman_collection.json với 14 request/42 assertions. File environment Newman có token chỉ tồn tại tạm trong ignored build, bị xóa sau chạy; không export token. Xem [Profile guide](../Frontend/docs/profile/README.md) cho consumer Android, trạng thái UI và giới hạn dữ liệu thật.

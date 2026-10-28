@@ -23,6 +23,7 @@ class ApiFailure(
     val code: String,
     val fields: List<FieldError>? = null,
     val retryAfter: Long? = null,
+    val details: JsonObject = JsonObject(emptyMap()),
 ) : RuntimeException(code)
 
 @Serializable data class UserDto(val id: String, val email: String, val status: String)

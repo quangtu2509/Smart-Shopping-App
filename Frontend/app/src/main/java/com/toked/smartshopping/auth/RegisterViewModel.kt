@@ -20,6 +20,7 @@ data class RegisterUiState(
     val account: AccountProfile? = null, val savingSession: Boolean = false,
     val challenge: AuthChallenge? = null, val code: String = "", val resendSeconds: Int = 0,
     val sessions: List<AuthSessionSummary> = emptyList(), val nextCursor: String? = null,
+    val profile: ProfileUiState = ProfileUiState(),
 ) { override fun toString() = "RegisterUiState(page=$page, sending=$sending)" }
 
 sealed interface AuthUiEvent {
@@ -41,6 +42,8 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
     private var restoreInFlight = false
     private var countdown: Job? = null
     private var pendingLogout: Boolean? = null
+    private var profileJob: Job? = null
+    private var pendingProfilePatch: ProfilePatch? = null
 
     fun start() {
         if (initialized) return
@@ -73,7 +76,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
         if (all != null) logout(all) else restore()
     }
     fun onResume() {
-        if (!state.value.sending && state.value.page in setOf(AuthPage.HOME_ENTRY, AuthPage.ONBOARDING, AuthPage.SESSIONS)) {
+        if (!state.value.sending && state.value.page in setOf(AuthPage.HOME_ENTRY, AuthPage.SESSIONS)) {
             restore(if (state.value.page == AuthPage.ONBOARDING) AuthPage.ONBOARDING else AuthPage.HOME_ENTRY)
         }
     }
@@ -162,7 +165,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
         mutableState.value = RegisterUiState(page = AuthPage.FORGOT,email = state.value.email,retrySeconds = state.value.retrySeconds)
     }
     fun continueAfterRegistration() {
-        if (state.value.page == AuthPage.REGISTER_SUCCESS) mutableState.value = state.value.copy(page = AuthPage.ONBOARDING)
+        if (state.value.page == AuthPage.REGISTER_SUCCESS) showProfile()
     }
     fun resend() {
         val current = state.value
@@ -270,8 +273,138 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
         pendingSession = null
         mutableState.value = RegisterUiState(page = AuthPage.REGISTER, email = state.value.email, retrySeconds = state.value.retrySeconds)
     }
-    fun skipOnboarding() { if (state.value.page == AuthPage.ONBOARDING) mutableState.value = state.value.copy(page = AuthPage.HOME_ENTRY) }
-    fun showProfile() { if (state.value.account != null) mutableState.value = state.value.copy(page = AuthPage.ONBOARDING) }
+    fun skipOnboarding() { leaveProfile() }
+    fun showProfile() {
+        if (state.value.account == null || state.value.sending || state.value.page == AuthPage.ONBOARDING) return
+        mutableState.value = state.value.copy(page = AuthPage.ONBOARDING, profile = ProfileUiState())
+        loadProfile()
+    }
+    private fun profileCurrent(owner: String) = state.value.page == AuthPage.ONBOARDING && state.value.account?.userId == owner
+    private fun updateProfile(transform: (ProfileUiState) -> ProfileUiState) {
+        mutableState.value = state.value.copy(profile = transform(state.value.profile))
+    }
+    fun loadProfile() {
+        val owner = state.value.account?.userId ?: return
+        if (state.value.page != AuthPage.ONBOARDING || state.value.profile.saving) return
+        profileJob?.cancel()
+        pendingProfilePatch = null
+        updateProfile { it.copy(loading = true, message = null, confirmReload = false) }
+        profileJob = viewModelScope.launch {
+            try {
+                val saved = repository.shoppingProfile()
+                if (!profileCurrent(owner)) return@launch
+                mutableState.value = state.value.copy(
+                    account = state.value.account?.copy(maxStores = saved.maxStores, mode = saved.mode),
+                    profile = ProfileUiState(loading = false, saved = saved, draft = ProfileDraft.from(saved), referencesLoading = true))
+                loadProfileReferences(owner)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: AuthFailure.SessionEnded) { expired() }
+            catch (_: Exception) { if (profileCurrent(owner)) updateProfile { it.copy(loading = false, message = "Chưa tải được hồ sơ. Kiểm tra kết nối và thử lại.") } }
+        }
+    }
+    private suspend fun loadProfileReferences(owner: String) {
+        try {
+            suspend fun all(kind: String): List<ProfileReference> {
+                val result = mutableListOf<ProfileReference>()
+                val cursors = mutableSetOf<String>()
+                var cursor: String? = null
+                do {
+                    val page = repository.references(kind, cursor)
+                    result += page.items
+                    cursor = page.nextCursor
+                    if (cursor != null && !cursors.add(cursor)) throw AuthFailure.InvalidResponse()
+                } while (cursor != null)
+                return result.distinctBy { it.id }
+            }
+            val categories = all("categories")
+            val brands = all("brands")
+            if (profileCurrent(owner)) updateProfile { it.copy(categories = categories, brands = brands, referenceError = false, referencesLoading = false) }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: AuthFailure.SessionEnded) { throw AuthFailure.SessionEnded() }
+        catch (_: Exception) { if (profileCurrent(owner)) updateProfile { it.copy(referenceError = true, referencesLoading = false) } }
+    }
+    fun retryProfileReferences() {
+        val owner = state.value.account?.userId ?: return
+        if (state.value.page != AuthPage.ONBOARDING || state.value.profile.loading || state.value.profile.saving || profileJob?.isActive == true) return
+        updateProfile { it.copy(referencesLoading = true) }
+        profileJob = viewModelScope.launch {
+            try { loadProfileReferences(owner) }
+            catch (_: AuthFailure.SessionEnded) { expired() }
+        }
+    }
+    fun editProfile(field: String, value: String) {
+        if (state.value.page != AuthPage.ONBOARDING || !state.value.profile.editable) return
+        updateProfile { p -> p.copy(draft = when (field) {
+            "household_size" -> p.draft.copy(household = value)
+            "default_period" -> p.draft.copy(period = value)
+            "max_stores" -> p.draft.copy(maxStores = value.toIntOrNull() ?: 0)
+            "optimization_mode" -> p.draft.copy(mode = value)
+            else -> p.draft
+        }, errors = p.errors - field, message = null) }
+    }
+    fun selectProfileReference(kind: String, id: String, preference: String) {
+        val p = state.value.profile
+        if (state.value.page != AuthPage.ONBOARDING || !p.editable || kind !in setOf("categories", "brands")) return
+        val d = p.draft
+        val preferred = if (kind == "categories") d.preferredCategories else d.preferredBrands
+        val avoided = if (kind == "categories") d.avoidedCategories else d.avoidedBrands
+        val refs = if (kind == "categories") p.categories else p.brands
+        if (id !in preferred && id !in avoided && refs.none { it.id == id && it.status == "ACTIVE" }) return
+        val nextPreferred = if (preference == "preferred" && id !in preferred) preferred + id else preferred - id
+        val nextAvoided = if (preference == "avoided" && id !in avoided) avoided + id else avoided - id
+        updateProfile { it.copy(draft = if (kind == "categories") d.copy(preferredCategories = nextPreferred, avoidedCategories = nextAvoided)
+            else d.copy(preferredBrands = nextPreferred, avoidedBrands = nextAvoided), errors = emptyMap(), message = null) }
+    }
+    fun saveProfile() {
+        val owner = state.value.account?.userId ?: return
+        val p = state.value.profile
+        if (state.value.page != AuthPage.ONBOARDING || p.loading || p.saving || p.saved == null || p.conflict) return
+        val errors = p.draft.errors()
+        if (errors.isNotEmpty()) { updateProfile { it.copy(errors = errors) }; return }
+        val patch = pendingProfilePatch ?: p.draft.patch(p.saved.version).also { pendingProfilePatch = it }
+        updateProfile { it.copy(saving = true, errors = emptyMap(), message = null, referencesLoading = false,
+            referenceError = it.referenceError || it.referencesLoading) }
+        profileJob?.cancel()
+        profileJob = viewModelScope.launch {
+            try {
+                val saved = repository.saveShoppingProfile(patch)
+                if (!profileCurrent(owner)) return@launch
+                pendingProfilePatch = null
+                val account = state.value.account!!
+                mutableState.value = state.value.copy(page = AuthPage.HOME_ENTRY,
+                    account = account.copy(maxStores = saved.maxStores, mode = saved.mode), profile = ProfileUiState())
+                eventsChannel.send(AuthUiEvent.Notice("Đã lưu hồ sơ mua sắm"))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: AuthFailure.SessionEnded) { pendingProfilePatch = null; expired() }
+            catch (failure: AuthFailure.Http) {
+                if (!profileCurrent(owner)) return@launch
+                if (failure.status in setOf(400,409,422)) pendingProfilePatch = null
+                updateProfile { it.copy(saving = false, conflict = failure.code == "VERSION_CONFLICT", uncertainSave = failure.status !in setOf(400,409,422),
+                    errors = failure.fields.mapValues { "Kiểm tra lại lựa chọn hoặc giá trị của trường này." },
+                    message = if (failure.code == "VERSION_CONFLICT") "Hồ sơ đã thay đổi trên thiết bị khác. Bản nhập của bạn vẫn được giữ; tải bản mới trước khi chỉnh tiếp."
+                    else "Chưa lưu được hồ sơ. Kiểm tra thông tin và thử lại.") }
+            } catch (_: Exception) {
+                if (profileCurrent(owner)) updateProfile { it.copy(saving = false, uncertainSave = true,
+                    message = "Chưa xác nhận được kết quả lưu. Thử lưu lại để kiểm tra cùng yêu cầu, hoặc tải lại hồ sơ.") }
+            }
+        }
+    }
+    fun leaveProfile(confirm: Boolean = false) {
+        val p = state.value.profile
+        if (state.value.page != AuthPage.ONBOARDING || p.saving) return
+        if (!confirm && (p.dirty || p.uncertainSave)) { updateProfile { it.copy(confirmLeave = true) }; return }
+        profileJob?.cancel(); pendingProfilePatch = null
+        mutableState.value = state.value.copy(page = AuthPage.HOME_ENTRY, profile = ProfileUiState())
+    }
+    fun profileDialog(action: String) {
+        if (state.value.page != AuthPage.ONBOARDING || state.value.profile.saving) return
+        when (action) {
+            "reload" -> updateProfile { it.copy(confirmReload = true) }
+            "confirmReload" -> loadProfile()
+            "discard" -> leaveProfile(true)
+            else -> updateProfile { it.copy(confirmReload = false, confirmLeave = false) }
+        }
+    }
     fun home() { if (!state.value.sending && state.value.account != null) mutableState.value = state.value.copy(page = AuthPage.HOME_ENTRY, sessions = emptyList(), nextCursor = null, message = null) }
 
     fun showSessions(more: Boolean = false) {

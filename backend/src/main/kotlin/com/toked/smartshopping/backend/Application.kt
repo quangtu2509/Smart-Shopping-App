@@ -46,6 +46,7 @@ fun main() {
 }
 
 fun Application.authModule(service: AuthService, flows: AuthFlows? = null) {
+    val profiles = service.shoppingProfiles()
     fun extended() = flows ?: throw ApiFailure(503, "AUTH_PROVIDER_UNCONFIGURED")
     install(ContentNegotiation) { json(wireJson) }
     intercept(ApplicationCallPipeline.Setup) {
@@ -60,7 +61,7 @@ fun Application.authModule(service: AuthService, flows: AuthFlows? = null) {
                 call.response.header(HttpHeaders.WWWAuthenticate,"Bearer")
             failure.retryAfter?.let { call.response.header(HttpHeaders.RetryAfter,it.toString()) }
             call.respond(HttpStatusCode.fromValue(failure.status), ErrorEnvelope(ApiError(failure.code,
-                "Request could not be completed.", retryable = failure.status == 429, field_errors = failure.fields), meta(call)))
+                "Request could not be completed.", details = failure.details, retryable = failure.status == 429, field_errors = failure.fields), meta(call)))
         }
         exception<SerializationException> { call, _ -> call.respond(HttpStatusCode.BadRequest,
             ErrorEnvelope(ApiError("MALFORMED_REQUEST","Invalid JSON."),meta(call))) }
@@ -188,6 +189,26 @@ fun Application.authModule(service: AuthService, flows: AuthFlows? = null) {
                 val result = withContext(Dispatchers.IO) { service.me(bearer(call)) }
                 call.respond(Envelope(result,meta(call)))
             }
+            get("/me/shopping-profile") {
+                val result = withContext(Dispatchers.IO) { profiles.get(bearer(call)) }
+                call.respond(Envelope(result, meta(call)))
+            }
+            patch("/me/shopping-profile") {
+                val b = body(call, setOf("expected_version"), setOf("household_size", "default_period",
+                    "preferred_category_ids", "avoided_category_ids", "preferred_brand_ids", "avoided_brand_ids",
+                    "max_stores", "optimization_mode"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { profiles.patch(bearer(call), call.request.headers["Idempotency-Key"], b) }
+                call.respond(Envelope(result, meta(call)))
+            }
+            for (kind in listOf("categories", "brands")) get("/$kind") {
+                val parameters = call.request.queryParameters
+                val limit = parameters["limit"]?.toIntOrNull() ?: if (parameters["limit"] == null) 20
+                    else throw ApiFailure(422, "VALIDATION_ERROR", listOf(FieldError("limit", "INVALID_INTEGER")))
+                val result = withContext(Dispatchers.IO) {
+                    profiles.references(bearer(call), kind, parameters["q"], parameters["parent_id"], limit, parameters["cursor"])
+                }
+                call.respond(Envelope(result, meta(call)))
+            }
         }
     }
 }
@@ -208,7 +229,7 @@ private fun bearer(call: ApplicationCall): String {
     return pieces[1]
 }
 
-private suspend fun body(call: ApplicationCall, required: Set<String>, optional: Set<String> = emptySet()): JsonObject {
+private suspend fun body(call: ApplicationCall, required: Set<String>, optional: Set<String> = emptySet(), stringsOnly: Boolean = true): JsonObject {
     if (!call.request.contentType().match(ContentType.Application.Json)) throw ApiFailure(400,"MALFORMED_REQUEST")
     // Bounded read prevents a large credential request from allocating an unbounded body.
     val bytes = call.receiveChannel().readRemaining(8193).readByteArray()
@@ -216,8 +237,10 @@ private suspend fun body(call: ApplicationCall, required: Set<String>, optional:
     val parsed = wireJson.parseToJsonElement(bytes.decodeToString()) as? JsonObject ?: throw ApiFailure(400,"MALFORMED_REQUEST")
     if ((parsed.keys - required - optional).isNotEmpty()) throw ApiFailure(400,"UNKNOWN_FIELD")
     if (!parsed.keys.containsAll(required)) throw ApiFailure(400,"MALFORMED_REQUEST")
-    required.forEach { text(parsed,it) }
-    optional.forEach { optionalText(parsed,it) }
+    if (stringsOnly) {
+        required.forEach { text(parsed,it) }
+        optional.forEach { optionalText(parsed,it) }
+    }
     return parsed
 }
 

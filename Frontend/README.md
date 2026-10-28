@@ -15,7 +15,7 @@ Google cần máy ảo có Google Play Services, tài khoản Google và Interne
 
 Để dùng **cùng một bản app trên emulator, điện thoại USB và Wireless debugging qua Wi-Fi**, xem [hướng dẫn chạy chung thiết bị](docs/local-backend-devices.md). Build với `smartShoppingDebugApiBaseUrl=http://127.0.0.1:8080/api/v1/` và reverse cổng 8080 trên từng thiết bị. Giữ property này trong mỗi lệnh build; nút Run mặc định vẫn dùng `10.0.2.2`. HTTP debug chỉ cho phép đúng `127.0.0.1`, `localhost`, `10.0.2.2`; HTTPS vẫn được hỗ trợ.
 
-3. Nhập Gmail chưa dùng, mật khẩu 10–128 ký tự gồm hoa/thường/ký tự đặc biệt và xác nhận khớp. Password không trim; email được backend normalize. Nhập mã trong email, xem “Đăng ký thành công!” rồi “Tiếp tục” vào “Thiết lập mua sắm”, hiển thị default tối đa 3 cửa hàng/BALANCED. “Bỏ qua và tiếp tục” đi tới Home entry; form chỉnh Profile sẽ được làm riêng.
+3. Nhập Gmail chưa dùng, mật khẩu 10–128 ký tự gồm hoa/thường/ký tự đặc biệt và xác nhận khớp. Password không trim; email được backend normalize. Nhập mã trong email, xem “Đăng ký thành công!” rồi “Tiếp tục” vào “Thiết lập mua sắm”, cho phép sửa đầy đủ hồ sơ mua sắm (PROFILE-01), mặc định tối đa 3 cửa hàng/BALANCED. “Lưu hồ sơ” hoặc “Bỏ qua và tiếp tục” đi tới Home; xem [hướng dẫn Profile](docs/profile/README.md).
 
 App chưa có phiên mở màn Đăng nhập. Nhấn “Đăng ký” để tạo tài khoản; tài khoản đã có dùng email/mật khẩu → Home có email của User. “Phiên đăng nhập” hiển thị các thiết bị còn hiệu lực, có tải thêm, thu hồi một phiên và xác nhận đăng xuất tất cả. “Đăng xuất” ở Home thu hồi phiên thiết bị này; dữ liệu mua sắm không bị xóa. Nếu mạng lỗi, app báo chưa xác nhận thu hồi server và vẫn xóa phiên trên thiết bị.
 

@@ -27,7 +27,7 @@ class AuthIntegrationTest {
         require(url.matches(Regex("jdbc:postgresql://127\\.0\\.0\\.1:55432/auth00_test"))) { "Refusing to reset any non-isolated database" }
         db = Database(url,"auth00_test","")
         db.migrate()
-        db.transaction { execute(it,"TRUNCATE auth_challenges,auth_identities,auth_rate_limits,refresh_tokens,auth_sessions,profiles,app_users") }
+        resetAuthTestData(db)
         clock.now = Instant.parse("2026-10-12T00:00:00Z")
         service = AuthService(db,clock = clock)
     }

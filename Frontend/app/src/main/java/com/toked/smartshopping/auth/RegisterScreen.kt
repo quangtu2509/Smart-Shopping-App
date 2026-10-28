@@ -43,14 +43,18 @@ fun RegisterScreen(viewModel: RegisterViewModel, modifier: Modifier = Modifier) 
     LaunchedEffect(viewModel) { viewModel.start() }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onResume() }
     BackHandler(enabled = state.page in setOf(AuthPage.REGISTER,AuthPage.FORGOT,AuthPage.VERIFY_EMAIL,AuthPage.VERIFY_RESET,AuthPage.RESET_PASSWORD,AuthPage.LINK_GOOGLE)) { viewModel.showLogin() }
-    BackHandler(enabled = state.page == AuthPage.ONBOARDING || state.page == AuthPage.HOME_ENTRY || state.page == AuthPage.REGISTER_SUCCESS) { }
+    BackHandler(enabled = state.page == AuthPage.ONBOARDING) { viewModel.skipOnboarding() }
+    BackHandler(enabled = state.page == AuthPage.HOME_ENTRY || state.page == AuthPage.REGISTER_SUCCESS) { }
     BackHandler(enabled = state.page == AuthPage.SESSIONS) { viewModel.home() }
     AuthContent(state, viewModel::edit, viewModel::submit, viewModel::showLogin,
         viewModel::showRegister, viewModel::skipOnboarding, viewModel::showProfile, viewModel::retryRestore, modifier,
         onSessions = { viewModel.showSessions() }, onMoreSessions = { viewModel.showSessions(more = true) },
         onRevoke = viewModel::revokeSession, onLogout = viewModel::logout, onHome = viewModel::home,
         onGoogle = { scope.launch { viewModel.signInGoogle { nonce -> googleIdToken(context,nonce) } } },
-        onForgot = viewModel::showForgot,onResend = viewModel::resend,onContinue = viewModel::continueAfterRegistration)
+        onForgot = viewModel::showForgot,onResend = viewModel::resend,onContinue = viewModel::continueAfterRegistration,
+        onProfileEdit = viewModel::editProfile, onProfileSelect = viewModel::selectProfileReference,
+        onProfileSave = viewModel::saveProfile, onProfileReload = viewModel::loadProfile,
+        onProfileReferences = viewModel::retryProfileReferences, onProfileDialog = viewModel::profileDialog)
 }
 
 @Composable
@@ -73,7 +77,18 @@ fun AuthContent(
     onForgot: () -> Unit = {},
     onResend: () -> Unit = {},
     onContinue: () -> Unit = {},
+    onProfileEdit: (String, String) -> Unit = { _, _ -> },
+    onProfileSelect: (String, String, String) -> Unit = { _, _, _ -> },
+    onProfileSave: () -> Unit = {},
+    onProfileReload: () -> Unit = {},
+    onProfileReferences: () -> Unit = {},
+    onProfileDialog: (String) -> Unit = {},
 ) {
+    if (state.page == AuthPage.ONBOARDING) {
+        ShoppingProfileContent(state.profile, onProfileEdit, onProfileSelect, onProfileSave, onSkip,
+            onProfileReload, onProfileReferences, onProfileDialog, modifier, ownerEmail = state.account?.email.orEmpty())
+        return
+    }
     if (state.page == AuthPage.HOME_ENTRY) {
         key(state.account?.userId) {
             HomeContent(
@@ -128,20 +143,7 @@ fun AuthContent(
                         }
                     }
                     AuthPage.LOGIN_ENTRY -> Unit
-                    AuthPage.ONBOARDING -> {
-                        Text("Thiết lập mua sắm", style = MaterialTheme.typography.headlineMedium)
-                        Text("Tài khoản của bạn đã sẵn sàng.", style = MaterialTheme.typography.bodyLarge)
-                        Text(state.account?.email.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        ElevatedCard(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text("Hồ sơ mặc định", style = MaterialTheme.typography.titleMedium)
-                                Text("Tối đa ${state.account?.maxStores ?: 3} cửa hàng")
-                                Text("Ưu tiên: ${modeLabel(state.account?.mode)}")
-                                Text("Bạn có thể bắt đầu với những lựa chọn này.", style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                        Button(onSkip, modifier = Modifier.fillMaxWidth()) { Text("Bỏ qua và tiếp tục") }
-                    }
+                    AuthPage.ONBOARDING -> Unit
                     AuthPage.HOME_ENTRY -> Unit
                     AuthPage.SESSIONS -> SessionsContent(state, onSessions, onMoreSessions, onRevoke, onLogout, onHome)
                 }

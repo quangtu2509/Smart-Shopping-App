@@ -1,0 +1,514 @@
+{
+  "info": {
+    "name": "PROFILE-01 Shopping Profile",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080/api/v1"
+    },
+    {
+      "key": "profile_token",
+      "value": ""
+    },
+    {
+      "key": "other_token",
+      "value": ""
+    },
+    {
+      "key": "request_key",
+      "value": ""
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get(\"request_key\") && !pm.environment.get(\"request_key\")) pm.collectionVariables.set(\"request_key\", pm.variables.replaceIn(\"{{$guid}}\"));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Requires bearer",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/me/shopping-profile"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 401\",()=>pm.response.to.have.status(401));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"auth error\",()=>pm.expect(r.error.code).to.eql(\"AUTH_REQUIRED\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Default profile",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"valid defaults\",()=>{pm.expect(r.data.max_stores).to.eql(3);pm.expect(r.data.version).to.eql(1);pm.expect(r.data.household_size).to.eql(null);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Category references",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          }
+        ],
+        "url": "{{base_url}}/categories?q=Profile&limit=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"reference schema\",()=>{pm.expect(r.data.items[0].id).to.eql(\"profile-food\");pm.expect(r.data.items[0].status).to.eql(\"ACTIVE\");});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Brand references",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          }
+        ],
+        "url": "{{base_url}}/brands?q=Profile"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"brands\",()=>pm.expect(r.data.items[0].id).to.eql(\"profile-brand\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Save profile",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":1,\"household_size\":4,\"default_period\":\"P1W\",\"preferred_category_ids\":[\"profile-food\"],\"avoided_category_ids\":[],\"preferred_brand_ids\":[\"profile-brand\"],\"avoided_brand_ids\":[],\"max_stores\":2,\"optimization_mode\":\"CHEAPEST\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"saved profile\",()=>{pm.expect(r.data.version).to.eql(2);pm.expect(r.data.household_size).to.eql(4);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Replay same intent",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":1,\"household_size\":4,\"default_period\":\"P1W\",\"preferred_category_ids\":[\"profile-food\"],\"avoided_category_ids\":[],\"preferred_brand_ids\":[\"profile-brand\"],\"avoided_brand_ids\":[],\"max_stores\":2,\"optimization_mode\":\"CHEAPEST\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"no second mutation\",()=>pm.expect(r.data.version).to.eql(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject changed payload for same key",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":1,\"max_stores\":1}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 409\",()=>pm.response.to.have.status(409));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"key conflict\",()=>pm.expect(r.error.code).to.eql(\"IDEMPOTENCY_KEY_REUSED\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject stale version",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}-stale"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":1,\"max_stores\":1}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 409\",()=>pm.response.to.have.status(409));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"version detail\",()=>{pm.expect(r.error.code).to.eql(\"VERSION_CONFLICT\");pm.expect(r.error.details.current_version).to.eql(2);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject fourth store",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}-limit"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":2,\"max_stores\":4}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 422\",()=>pm.response.to.have.status(422));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"field error\",()=>pm.expect(r.error.field_errors[0].field).to.eql(\"max_stores\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject overlapping preferences",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}-overlap"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":2,\"avoided_category_ids\":[\"profile-food\"]}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 422\",()=>pm.response.to.have.status(422));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"overlap\",()=>pm.expect(r.error.field_errors[0].code).to.eql(\"PREFERENCE_OVERLAP\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject owner injection",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}-owner"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":2,\"user_id\":\"other\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 400\",()=>pm.response.to.have.status(400));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"unknown field\",()=>pm.expect(r.error.code).to.eql(\"UNKNOWN_FIELD\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Require idempotency key",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":2,\"max_stores\":1}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 400\",()=>pm.response.to.have.status(400));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"key required\",()=>pm.expect(r.error.code).to.eql(\"IDEMPOTENCY_KEY_REQUIRED\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clear optional fields",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{profile_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{request_key}}-clear"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":2,\"household_size\":null,\"default_period\":null}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"null and preservation\",()=>{pm.expect(r.data.household_size).to.eql(null);pm.expect(r.data.default_period).to.eql(null);pm.expect(r.data.preferred_brand_ids).to.eql([\"profile-brand\"]);pm.expect(r.data.version).to.eql(3);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Different owner remains default",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{other_token}}"
+          }
+        ],
+        "url": "{{base_url}}/me/shopping-profile"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const r=pm.response.json();",
+              "pm.test(\"request id\",()=>pm.expect(r.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"owner isolation\",()=>{pm.expect(r.data.max_stores).to.eql(3);pm.expect(r.data.preferred_brand_ids).to.eql([]);});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

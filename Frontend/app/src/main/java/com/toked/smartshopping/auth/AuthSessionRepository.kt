@@ -39,6 +39,10 @@ class AuthSessionRepository(private val api: AuthGateway, private val store: Ses
         authorized { api.sessions(it, cursor) }
     }
 
+    suspend fun shoppingProfile(): ShoppingProfile = mutex.withLock { authorized { api.shoppingProfile(it) } }
+    suspend fun saveShoppingProfile(patch: ProfilePatch): ShoppingProfile = mutex.withLock { authorized { api.saveShoppingProfile(it, patch) } }
+    suspend fun references(kind: String, cursor: String?): ReferencePage = mutex.withLock { authorized { api.references(it, kind, cursor) } }
+
     suspend fun revoke(id: String): Boolean = mutex.withLock {
         val current = session ?: throw AuthFailure.SessionEnded()
         authorized { api.revoke(it, id) }

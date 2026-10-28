@@ -11,6 +11,10 @@ fun main() {
     val url = "jdbc:postgresql://127.0.0.1:55432/auth00_test"
     val db = Database(url,"auth00_test","")
     db.migrate()
+    db.transaction { c ->
+        execute(c, "INSERT INTO shopping_categories(id,name,status) VALUES ('fixture-food','Thực phẩm thử nghiệm','ACTIVE') ON CONFLICT DO NOTHING")
+        execute(c, "INSERT INTO shopping_brands(id,name,status) VALUES ('fixture-brand','Thương hiệu thử nghiệm','ACTIVE') ON CONFLICT DO NOTHING")
+    }
     val codes = ConcurrentHashMap<String,String>()
     val service = AuthService(db,policy = AuthPolicy(rateLimit = 500))
     val flows = AuthFlows(db,service,AuthMailer { email,code,_ -> codes[email] = code },

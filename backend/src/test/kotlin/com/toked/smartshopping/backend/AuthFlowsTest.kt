@@ -24,7 +24,7 @@ class AuthFlowsTest {
         require(url == "jdbc:postgresql://127.0.0.1:55432/auth00_test")
         db = Database(url,"auth00_test", "")
         db.migrate()
-        db.transaction { execute(it, "TRUNCATE auth_challenges,auth_identities,auth_rate_limits,refresh_tokens,auth_sessions,profiles,app_users") }
+        resetAuthTestData(db)
         clock.now = Instant.parse("2026-10-18T00:00:00Z")
         auth = AuthService(db, clock = clock)
         flows = AuthFlows(db, auth, AuthMailer { email, code, _ -> mail[email] = code }, GoogleVerifier { identity }, ByteArray(32) { 7 }, clock)

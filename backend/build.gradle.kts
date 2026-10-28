@@ -37,6 +37,7 @@ dependencies {
 
 tasks.test {
     inputs.file("postman/auth00.postman_collection.json")
+    inputs.file("postman/profile01.postman_collection.json")
     inputs.dir("src/test/javascript")
     inputs.file("scripts/run-local.ps1")
     inputs.dir("src/test/powershell")

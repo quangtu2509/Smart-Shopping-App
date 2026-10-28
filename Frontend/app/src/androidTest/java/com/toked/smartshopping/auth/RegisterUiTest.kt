@@ -152,11 +152,12 @@ class RegisterUiTest {
 
     @Test fun onboardingUsesDefaultsAndSkipsToHome() {
         var state by mutableStateOf(RegisterUiState(page = AuthPage.ONBOARDING,
-            account = AccountProfile("fixture", "fixture@gmail.com", 3, "BALANCED")))
+            account = AccountProfile("fixture", "fixture@gmail.com", 3, "BALANCED"),
+            profile = ProfileUiState(loading = false, saved = ShoppingProfile())))
         compose.setContent { SmartShoppingTheme { AuthContent(state, { _, _ -> }, {}, {}, {},
             { state = state.copy(page = AuthPage.HOME_ENTRY) }, {}, {}) } }
         compose.onNodeWithText("Thiết lập mua sắm").assertExists()
-        compose.onNodeWithText("Tối đa 3 cửa hàng").assertExists()
+        compose.onNodeWithText("3 cửa hàng").performScrollTo().assertIsSelected()
         val directory = outputDirectory()
         directory.mkdirs()
         File(directory, "onboarding.png").outputStream().use {
@@ -214,7 +215,8 @@ class RegisterUiTest {
         assertEquals("Live registration did not reach onboarding", AuthPage.ONBOARDING, vm.state.value.page)
         compose.onNodeWithText("Thiết lập mua sắm").assertExists()
         compose.onNodeWithText(email).assertExists()
-        compose.onNodeWithText("Tối đa 3 cửa hàng").assertExists()
+        compose.onNodeWithText("3 cửa hàng").performScrollTo().assertIsSelected()
+        compose.waitUntil(15000) { vm.state.value.profile.saved != null }
         val saved = runBlocking { store.load()!! }
         val confirmed = runBlocking { api.me(saved.accessToken) }
         assertEquals(email, confirmed.email); assertEquals(saved.account.userId, confirmed.userId)
