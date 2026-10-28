@@ -34,12 +34,12 @@ class PendingSessionUiTest {
         fun assertRoutesDisabled() {
             when (page) {
                 AuthPage.LOGIN_ENTRY -> {
-                    compose.onNodeWithText("Đăng ký").performScrollTo().assertIsNotEnabled()
+                    compose.onNodeWithText("Đăng ký").assertIsDisplayed().assertIsNotEnabled()
                     compose.onNodeWithText("Quên mật khẩu?").performScrollTo().assertIsNotEnabled()
                     compose.onNodeWithText("Tiếp tục với Google").performScrollTo().assertIsNotEnabled()
                 }
                 AuthPage.REGISTER -> {
-                    compose.onNodeWithText("Đăng nhập").performScrollTo().assertIsNotEnabled()
+                    compose.onNodeWithText("Đăng nhập").assertIsDisplayed().assertIsNotEnabled()
                     compose.onNodeWithContentDescription("Quay lại đăng nhập").assertIsNotEnabled()
                     compose.onNodeWithText("Tiếp tục với Google").performScrollTo().assertIsNotEnabled()
                 }
@@ -55,7 +55,10 @@ class PendingSessionUiTest {
         assertRoutesDisabled()
         compose.onNodeWithContentDescription(if (page == AuthPage.VERIFY_EMAIL) "Mã xác minh" else if (page == AuthPage.LINK_GOOGLE) "Mật khẩu" else "Email")
             .assertIsNotEnabled()
-        compose.onNodeWithText("Lưu lại phiên đăng nhập").performScrollTo().assertIsEnabled().performClick()
+        val retry = compose.onNodeWithText("Lưu lại phiên đăng nhập")
+        if (page == AuthPage.LOGIN_ENTRY || page == AuthPage.REGISTER) retry.assertIsDisplayed()
+        else retry.performScrollTo()
+        retry.assertIsEnabled().performClick()
         assertEquals(1, submits)
         assertRoutesDisabled()
         // While the local write runs, the same button must not start a second write.

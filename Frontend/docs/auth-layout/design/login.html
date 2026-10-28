@@ -1,0 +1,250 @@
+<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_stack" name="shell-type"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+  @layer base {
+    html, body {
+      width: 100vw;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      overscroll-behavior: none;
+      background-color: #FAFBF8;
+    }
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom, 16px);
+    }
+    .pt-safe {
+      padding-top: env(safe-area-inset-top, 16px);
+    }
+  }
+  ::-webkit-scrollbar {
+    display: none;
+  }
+</style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          brand: {
+            DEFAULT: "#009A68",
+            dark: "#007B53",
+            light: "#E8F5E9"
+          },
+          navy: {
+            900: "#202B3A"
+          }
+        },
+        fontFamily: {
+          sans: ["Inter", "sans-serif"],
+          display: ["Plus Jakarta Sans", "Inter", "sans-serif"]
+        }
+      }
+    }
+  };
+</script>
+<style>
+  body {
+    min-height: max(844px, 100dvh);
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .animate-spin-custom {
+    animation: spin 0.8s linear infinite;
+  }
+</style>
+</head>
+<body class="bg-[#FAFBF8] font-sans text-navy-900 flex flex-col min-h-screen selection:bg-[#009A68]/20">
+<main class="flex flex-col relative w-full pb-safe flex-1 pt-safe max-w-[440px] mx-auto px-6 justify-between">
+<!-- Content Area -->
+<div class="flex flex-col w-full pt-4">
+<!-- Logo Section (No Top Bar) -->
+<div class="flex items-center justify-center pt-2 pb-3">
+<img alt="Smart Shopping Logo" class="w-[200px] max-w-[210px] h-auto object-contain mix-blend-multiply" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgZTd4yxVVdq48whr-qc2aY3TNXu2sekMypszUUDcX5RS0Ur1qf4VVAWsA9mcqUmOGyFAnMT6DFpAfKiQBJIzrJh7846X5HOjCqjCFgt6tij-lkppWALPqi2VvNxsneCDHRDYcNRCZqLrMwRGaSNGzwieIwXqlzcfXef910_53CNPXksle0eMfTeK20AdQACFGjEpuMxpdl92VASOgoIyYUWzwMhf36R5k4ljCfXKvtjQToaL_wXBPrMNvMnltyfPpb_c">
+</div>
+<!-- Title & Tagline -->
+<div class="text-center mb-6">
+<h1 class="font-display text-[27px] leading-tight font-extrabold text-[#202B3A] tracking-tight mb-2">
+        Chào mừng trở lại!
+      </h1>
+<p class="text-[14px] leading-relaxed text-[#6B7280]">
+        Đăng nhập để tiếp tục kế hoạch mua sắm của bạn.
+      </p>
+</div>
+<!-- Form Section -->
+<form class="flex flex-col gap-4" id="loginForm" onsubmit="event.preventDefault(); handleLogin();">
+<!-- Email Field -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[13px] font-semibold text-[#374151] ml-1" for="emailInput">
+          Email
+        </label>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-4 text-[20px] text-[#9CA3AF] pointer-events-none select-none">
+            mail
+          </span>
+<input autocomplete="email" class="w-full h-[52px] pl-11 pr-4 bg-white text-[#202B3A] text-[14px] font-normal rounded-2xl border border-[#E5E7EB] outline-none transition-all placeholder:text-[#9CA3AF] focus:border-[#009A68] focus:ring-2 focus:ring-[#009A68]/15 shadow-sm" id="emailInput" name="email" placeholder="example@email.com" type="email" value="example@email.com">
+</div>
+</div>
+<!-- Password Field -->
+<div class="flex flex-col gap-1.5">
+<label class="text-[13px] font-semibold text-[#374151] ml-1" for="passwordInput">
+          Mật khẩu
+        </label>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-4 text-[20px] text-[#9CA3AF] pointer-events-none select-none">
+            lock
+          </span>
+<input autocomplete="current-password" class="w-full h-[52px] pl-11 pr-12 bg-white text-[#202B3A] text-[14px] font-normal rounded-2xl border border-red-400 outline-none transition-all focus:border-red-500 focus:ring-2 focus:ring-red-500/15 shadow-sm" id="passwordInput" name="password" placeholder="••••••••" type="password" value="matkhau1234">
+<button aria-label="Ẩn hiện mật khẩu" class="absolute right-2.5 w-10 h-10 flex items-center justify-center rounded-xl text-[#9CA3AF] hover:text-[#4B5563] transition-colors focus:outline-none" id="togglePasswordBtn" onclick="togglePasswordVisibility()" type="button">
+<span class="material-symbols-outlined text-[20px]" id="togglePasswordIcon">
+              visibility
+            </span>
+</button>
+</div>
+<!-- Forgot Password Link -->
+<div class="flex justify-end pt-0.5">
+<button class="text-[13px] font-medium text-[#009A68] hover:text-[#007B53] transition-colors focus:outline-none" onclick="triggerForgotPassword()" type="button">
+            Quên mật khẩu?
+          </button>
+</div>
+<!-- Sample Inline Error Banner -->
+<div class="flex items-center gap-1.5 pt-1 text-[#DC2626]" id="inlineError">
+<span class="material-symbols-outlined text-[16px] text-[#DC2626] shrink-0" style="font-variation-settings: 'FILL' 1;">
+            error
+          </span>
+<span class="text-[12.5px] font-medium text-[#DC2626]">
+            Email hoặc mật khẩu không đúng.
+          </span>
+</div>
+</div>
+<!-- Primary Login CTA Button -->
+<button class="w-full h-[54px] bg-[#009A68] hover:bg-[#007B53] active:scale-[0.985] text-white font-semibold text-[15px] rounded-2xl flex items-center justify-center gap-2 shadow-md shadow-[#009A68]/20 transition-all mt-1" id="loginSubmitBtn" type="submit">
+<span class="hidden" id="loginBtnSpinner">
+<svg class="animate-spin-custom h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+<path class="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" fill="currentColor"></path>
+</svg>
+</span>
+<span id="loginBtnText">Đăng nhập</span>
+<span class="material-symbols-outlined text-[18px]" id="loginBtnIcon">
+          arrow_forward
+        </span>
+</button>
+</form>
+<!-- Divider -->
+<div class="relative my-6 flex items-center justify-center">
+<div class="w-full border-t border-[#E5E7EB]"></div>
+<span class="absolute px-3 bg-[#FAFBF8] text-[13px] text-[#9CA3AF]">
+        hoặc
+      </span>
+</div>
+<!-- Official 4-Color Google Sign-in Button -->
+<button class="w-full h-[54px] bg-white hover:bg-[#F9FAFB] active:scale-[0.985] border border-[#E5E7EB] text-[#202B3A] font-semibold text-[14.5px] rounded-2xl flex items-center justify-center gap-3 shadow-sm transition-all focus:outline-none" id="googleSignInBtn" onclick="handleGoogleSignIn()" type="button">
+<span class="hidden" id="googleBtnSpinner">
+<svg class="animate-spin-custom h-5 w-5 text-[#202B3A]" fill="none" viewBox="0 0 24 24">
+<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+<path class="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" fill="currentColor"></path>
+</svg>
+</span>
+<!-- Official 4-color Google Vector Logo -->
+<svg class="w-5 h-5 shrink-0" id="googleLogoIcon" viewBox="0 0 24 24">
+<path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"></path>
+<path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"></path>
+<path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"></path>
+<path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"></path>
+</svg>
+<span id="googleBtnText">Tiếp tục với Google</span>
+</button>
+</div>
+<!-- Bottom Section -->
+<div class="flex flex-col items-center pt-8 pb-4">
+<div class="flex items-center justify-center gap-1.5 text-[14px] mb-4">
+<span class="text-[#6B7280]">Chưa có tài khoản?</span>
+<button class="font-semibold text-[#009A68] hover:text-[#007B53] transition-colors focus:outline-none" onclick="goToRegister()" type="button">
+        Đăng ký
+      </button>
+</div>
+<!-- Security Badge -->
+<div class="flex items-center gap-1.5 py-1 px-3 bg-[#E8F5E9]/60 rounded-full border border-[#009A68]/15">
+<span class="material-symbols-outlined text-[15px] text-[#009A68]" style="font-variation-settings: 'FILL' 1;">
+        verified_user
+      </span>
+<span class="text-[12px] font-medium text-[#4B5563]">
+        Dữ liệu được mã hóa an toàn
+      </span>
+</div>
+</div>
+</main>
+<script>
+  function togglePasswordVisibility() {
+    const passwordInput = document.getElementById('passwordInput');
+    const toggleIcon = document.getElementById('togglePasswordIcon');
+    if (!passwordInput || !toggleIcon) return;
+
+    if (passwordInput.type === 'password') {
+      passwordInput.type = 'text';
+      toggleIcon.textContent = 'visibility_off';
+    } else {
+      passwordInput.type = 'password';
+      toggleIcon.textContent = 'visibility';
+    }
+  }
+
+  function handleLogin() {
+    const btn = document.getElementById('loginSubmitBtn');
+    const spinner = document.getElementById('loginBtnSpinner');
+    const text = document.getElementById('loginBtnText');
+    const icon = document.getElementById('loginBtnIcon');
+    const errorEl = document.getElementById('inlineError');
+
+    // Simulate loading state
+    btn.disabled = true;
+    spinner.classList.remove('hidden');
+    icon.classList.add('hidden');
+    text.textContent = 'Đang xử lý...';
+
+    setTimeout(() => {
+      btn.disabled = false;
+      spinner.classList.add('hidden');
+      icon.classList.remove('hidden');
+      text.textContent = 'Đăng nhập';
+
+      // Toggle or show error banner
+      if (errorEl) {
+        errorEl.classList.remove('hidden');
+      }
+    }, 1200);
+  }
+
+  function handleGoogleSignIn() {
+    const btn = document.getElementById('googleSignInBtn');
+    const spinner = document.getElementById('googleBtnSpinner');
+    const logo = document.getElementById('googleLogoIcon');
+    const text = document.getElementById('googleBtnText');
+
+    btn.disabled = true;
+    spinner.classList.remove('hidden');
+    logo.classList.add('hidden');
+    text.textContent = 'Đang liên kết Google...';
+
+    setTimeout(() => {
+      btn.disabled = false;
+      spinner.classList.add('hidden');
+      logo.classList.remove('hidden');
+      text.textContent = 'Tiếp tục với Google';
+    }, 1500);
+  }
+
+  function triggerForgotPassword() {
+    const email = document.getElementById('emailInput')?.value || '';
+    alert('Liên kết đặt lại mật khẩu đã được gửi đến: ' + (email || 'email của bạn'));
+  }
+
+  function goToRegister() {
+    alert('Chuyển hướng đến màn hình Đăng ký tài khoản');
+  }
+</script>
+</body></html>

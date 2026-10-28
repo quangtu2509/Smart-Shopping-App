@@ -65,9 +65,15 @@ class AuthVerificationViewModelTest {
         val vm = model(api,store); vm.edit("email","shopper@gmail.com"); vm.showForgot(); vm.submit()
         assertEquals(AuthPage.VERIFY_RESET,vm.state.value.page)
         vm.edit("code","123456"); vm.submit(); assertEquals(AuthPage.RESET_PASSWORD,vm.state.value.page)
+        assertFalse(vm.state.value.passwordResetComplete)
         fill(vm); vm.submit()
         assertEquals(1,resetCalls); assertEquals(AuthPage.LOGIN_ENTRY,vm.state.value.page)
         assertEquals("",vm.state.value.password); assertNull(store.value)
+        assertTrue(vm.state.value.passwordResetComplete)
+        vm.showLogin()
+        assertFalse(vm.state.value.passwordResetComplete)
+        assertEquals("shopper@gmail.com", vm.state.value.email)
+        assertNull(store.value)
     }
     @Test fun resendWaitsButDoesNotBlockVerification() = runTest(dispatcher) {
         var resends = 0

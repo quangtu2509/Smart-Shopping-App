@@ -1,22 +1,17 @@
 package com.toked.smartshopping.auth
 
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -49,171 +44,61 @@ fun RegisterContent(
     var showConfirmation by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     val fieldsEnabled = !state.sending && !state.savingSession
-    val canSubmit = !state.sending && state.retrySeconds == 0
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val submit = {
-        if (canSubmit) {
+        if (!state.sending && state.retrySeconds == 0) {
             keyboard?.hide()
             focus.clearFocus()
             onSubmit()
         }
     }
-
-    Column(modifier) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    BoxWithConstraints(modifier) {
+        val compact = maxHeight < 800.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+        AuthFormLayout(
+            modifier = Modifier.fillMaxSize(),
+            topBar = { AuthTopBar("Đăng ký", onLogin, fieldsEnabled, titleAlign = TextAlign.Center) },
+            footerContent = {
+                if (compact) AuthSubmitButton(state, "Tạo tài khoản", submit, textStyle = MaterialTheme.typography.titleMedium)
+                AuthAccountSwitch("Đã có tài khoản?", "Đăng nhập", fieldsEnabled, onLogin)
+                if (!compact) AuthSessionBadge()
+            },
         ) {
-            IconButton(onLogin, enabled = fieldsEnabled) {
-                Icon(painterResource(R.drawable.ic_auth_arrow_back), contentDescription = "Quay lại đăng nhập")
+            AuthBrandHeader("Tạo tài khoản", "Bắt đầu lên kế hoạch mua sắm thông minh hơn.",
+                logoWidth = if (compact) 64.dp else 136.dp, titleStyle = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            GoogleAuthButton(onGoogle, fieldsEnabled && state.retrySeconds == 0)
+            AuthDivider("HOẶC ĐĂNG KÝ BẰNG EMAIL")
+            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+                color = colors.surfaceContainerLowest, shadowElevation = 1.dp) {
+                Column(Modifier.padding(if (compact) 12.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    RegistrationField(state.email, { onEdit("email", it) }, "Email", "email@gmail.com", R.drawable.ic_auth_mail,
+                        fieldsEnabled, state.errors["email"],
+                        KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, autoCorrectEnabled = false))
+                    RegistrationField(state.password, { onEdit("password", it) }, "Mật khẩu", "Nhập mật khẩu", R.drawable.ic_auth_lock,
+                        fieldsEnabled, state.errors["password"],
+                        KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next, autoCorrectEnabled = false),
+                        helperText = passwordHint,
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = { PasswordToggle(showPassword, "mật khẩu", fieldsEnabled) { showPassword = !showPassword } })
+                    RegistrationField(state.confirmation, { onEdit("confirm_password", it) }, "Xác nhận mật khẩu", "Nhập lại mật khẩu", R.drawable.ic_auth_lock,
+                        fieldsEnabled, state.errors["confirm_password"],
+                        KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done, autoCorrectEnabled = false),
+                        keyboardActions = KeyboardActions(onDone = { submit() }),
+                        visualTransformation = if (showConfirmation) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = { PasswordToggle(showConfirmation, "mật khẩu xác nhận", fieldsEnabled) { showConfirmation = !showConfirmation } })
+                    state.message?.let { message ->
+                        Surface(shape = RoundedCornerShape(12.dp), color = colors.errorContainer) {
+                            Text(message, Modifier.padding(12.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                                color = colors.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (!compact) AuthSubmitButton(state, "Tạo tài khoản", submit, textStyle = MaterialTheme.typography.titleMedium)
+                }
             }
-            Text("Đăng ký", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.width(48.dp))
-        }
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Column(
-                Modifier.widthIn(max = 480.dp).fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // Use the original Stitch logo as a bundled asset, with its original white backdrop.
-                Image(
-                    painterResource(R.drawable.smart_shopping_logo),
-                    contentDescription = "Smart Shopping",
-                    modifier = Modifier.width(136.dp).height(102.dp).clip(RoundedCornerShape(16.dp)),
-                )
-                Spacer(Modifier.height(8.dp))
-                Text("Tạo tài khoản", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Bắt đầu lên kế hoạch mua sắm thông minh hơn.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(24.dp))
-                GoogleAuthButton(onGoogle,fieldsEnabled && state.retrySeconds == 0)
+            if (compact) {
                 Spacer(Modifier.height(16.dp))
-                Text("Hoặc đăng ký bằng Gmail",style = MaterialTheme.typography.bodySmall,color = colors.onSurfaceVariant)
-                Spacer(Modifier.height(16.dp))
-                Surface(
-                    Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    color = colors.surfaceContainerLowest,
-                    shadowElevation = 1.dp,
-                ) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        RegistrationField(
-                            value = state.email,
-                            onValueChange = { onEdit("email", it) },
-                            label = "Email",
-                            placeholder = "email@gmail.com",
-                            leadingIcon = R.drawable.ic_auth_mail,
-                            enabled = fieldsEnabled,
-                            errorMessage = state.errors["email"],
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, autoCorrectEnabled = false),
-                        )
-                        RegistrationField(
-                            value = state.password,
-                            onValueChange = { onEdit("password", it) },
-                            label = "Mật khẩu",
-                            placeholder = "Nhập mật khẩu",
-                            leadingIcon = R.drawable.ic_auth_lock,
-                            enabled = fieldsEnabled,
-                            errorMessage = state.errors["password"],
-                            helperText = passwordHint,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next, autoCorrectEnabled = false),
-                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                PasswordToggle(showPassword, "mật khẩu", fieldsEnabled) { showPassword = !showPassword }
-                            },
-                        )
-                        RegistrationField(
-                            value = state.confirmation,
-                            onValueChange = { onEdit("confirm_password", it) },
-                            label = "Xác nhận mật khẩu",
-                            placeholder = "Nhập lại mật khẩu",
-                            leadingIcon = R.drawable.ic_auth_lock,
-                            enabled = fieldsEnabled,
-                            errorMessage = state.errors["confirm_password"],
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done, autoCorrectEnabled = false),
-                            keyboardActions = KeyboardActions(onDone = { submit() }),
-                            visualTransformation = if (showConfirmation) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                PasswordToggle(showConfirmation, "mật khẩu xác nhận", fieldsEnabled) { showConfirmation = !showConfirmation }
-                            },
-                        )
-                        state.message?.let { message ->
-                            Surface(shape = RoundedCornerShape(12.dp), color = colors.errorContainer) {
-                                Text(
-                                    message,
-                                    Modifier.padding(12.dp).semantics { liveRegion = LiveRegionMode.Polite },
-                                    color = colors.onErrorContainer,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = submit,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                            enabled = canSubmit,
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-                        ) {
-                            if (state.sending) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = colors.onPrimary)
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            Text(
-                                when {
-                                    state.sending -> "Đang gửi…"
-                                    state.retrySeconds > 0 -> "Thử lại sau ${state.retrySeconds}s"
-                                    state.savingSession -> "Lưu lại phiên đăng nhập"
-                                    else -> "Tạo tài khoản"
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                textAlign = TextAlign.Center,
-                            )
-                            if (!state.sending && state.retrySeconds == 0) {
-                                Spacer(Modifier.width(8.dp))
-                                Icon(painterResource(R.drawable.ic_auth_arrow_forward), null, Modifier.size(20.dp))
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                FlowRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalArrangement = Arrangement.Center,
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Đã có tài khoản?", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-                    TextButton(onLogin, enabled = fieldsEnabled) { Text("Đăng nhập") }
-                }
-                Spacer(Modifier.height(8.dp))
-                Surface(shape = CircleShape, color = colors.secondaryContainer) {
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(painterResource(R.drawable.ic_auth_shield), null, Modifier.size(18.dp), tint = colors.onSecondaryContainer)
-                        Text(
-                            "Phiên được mã hóa trên thiết bị",
-                            color = colors.onSecondaryContainer,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
+                AuthSessionBadge()
             }
         }
     }

@@ -1,0 +1,41 @@
+{
+  "project": "11930636729725860020",
+  "retrieved": "2026-10-27",
+  "screens": [
+    {
+      "alias": "login",
+      "screen": "projects/11930636729725860020/screens/9db38bd691e047e79f8b6b184dc5d023",
+      "title": "Đăng nhập - Smart Shopping"
+    },
+    {
+      "alias": "register",
+      "screen": "projects/11930636729725860020/screens/b86d05bbf8884a5e9fc5ef7730c78e75",
+      "title": "Tạo tài khoản - Smart Shopping"
+    },
+    {
+      "alias": "forgot",
+      "screen": "projects/11930636729725860020/screens/d6e9df68b8ae4cb79e0bdaffb6670674",
+      "title": "Quên mật khẩu - Smart Shopping"
+    },
+    {
+      "alias": "otp",
+      "screen": "projects/11930636729725860020/screens/98731f220ef0445f8c81dbe0f5a063a5",
+      "title": "Xác thực mã OTP - Smart Shopping"
+    },
+    {
+      "alias": "reset",
+      "screen": "projects/11930636729725860020/screens/a9c1bb794f7e4a08b4025f3b3f6539d0",
+      "title": "Đặt lại mật khẩu - Smart Shopping"
+    },
+    {
+      "alias": "register-success",
+      "screen": "projects/11930636729725860020/screens/225d1d2330434a6388165cc1acbc4789",
+      "title": "Đăng nhập - Thông báo đăng ký thành công"
+    },
+    {
+      "alias": "reset-success",
+      "screen": "projects/11930636729725860020/screens/3f9d2900c14d4fbab3c4515f2e56b34e",
+      "title": "Đổi mật khẩu thành công - Smart Shopping"
+    }
+  ]
+}

@@ -44,7 +44,7 @@ class LoginUiTest {
             }
         }
         picture("login.png")
-        compose.onNodeWithText("Đăng nhập").performScrollTo().performClick()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().performClick()
         compose.onNodeWithText("Nhập email hợp lệ.").assertExists()
         compose.onNodeWithContentDescription("Email").performTextInput("fixture@gmail.com")
         compose.onNodeWithContentDescription("Mật khẩu").performTextInput("fixture-password")
@@ -52,7 +52,7 @@ class LoginUiTest {
         compose.onNodeWithContentDescription("Ẩn mật khẩu").assertExists()
         compose.onNodeWithContentDescription("Mật khẩu").performImeAction()
         assertEquals(2, submits)
-        compose.onNodeWithText("Đăng ký").performScrollTo().performClick()
+        compose.onNodeWithText("Đăng ký").assertIsDisplayed().performClick()
         assertEquals(1, registrations)
     }
 
@@ -61,15 +61,15 @@ class LoginUiTest {
             message = "Tài khoản đang bị khóa tạm thời. Vui lòng chờ rồi thử lại."))
         var submits = 0
         compose.setContent { SmartShoppingTheme { Fixture(state, { _, _ -> }, { submits++ }, {}) } }
-        compose.onNodeWithText("Thử lại sau 20s").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Thử lại sau 20s").assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Mật khẩu").performImeAction()
         assertEquals(0, submits)
         picture("login-locked.png")
         compose.runOnIdle { state = state.copy(sending = true) }
-        compose.onNodeWithText("Đang đăng nhập…").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Đang đăng nhập…").assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Email").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Hiện mật khẩu").assertIsNotEnabled()
-        compose.onNodeWithText("Đăng ký").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Đăng ký").assertIsDisplayed().assertIsNotEnabled()
     }
 
     @Test fun darkLoginAndGenericErrorFixture() {
@@ -95,8 +95,8 @@ class LoginUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Đăng nhập").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Đăng ký").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().assertIsDisplayed()
+        compose.onNodeWithText("Đăng ký").assertIsDisplayed().assertIsDisplayed()
         picture("login-large-font.png")
         compose.runOnIdle { page = AuthPage.SESSIONS }
         compose.onNodeWithText("Thu hồi phiên").performClick()
@@ -136,7 +136,7 @@ class LoginUiTest {
         compose.waitUntil(15000) { vm.state.value.page == AuthPage.LOGIN_ENTRY }
         compose.onNodeWithContentDescription("Email").performTextInput(email)
         compose.onNodeWithContentDescription("Mật khẩu").performTextInput(password)
-        compose.onNodeWithText("Đăng nhập").performScrollTo().performClick()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().performClick()
         compose.waitUntil(30000) { vm.state.value.page == AuthPage.HOME_ENTRY || vm.state.value.message != null }
         assertEquals(AuthPage.HOME_ENTRY, vm.state.value.page)
         compose.onNodeWithText("Cá nhân").performClick()
@@ -167,7 +167,7 @@ class LoginUiTest {
         val other = runBlocking { fixtureRegister(api,base,otherEmail,password) }
         compose.onNodeWithContentDescription("Email").performTextInput(otherEmail)
         compose.onNodeWithContentDescription("Mật khẩu").performTextInput(password)
-        compose.onNodeWithText("Đăng nhập").performScrollTo().performClick()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().performClick()
         compose.waitUntil(30000) { vm.state.value.page == AuthPage.HOME_ENTRY }
         compose.onNodeWithText(otherEmail).assertExists(); compose.onNodeWithText(email).assertDoesNotExist()
         val current = runBlocking { store.load()!! }

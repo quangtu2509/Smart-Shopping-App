@@ -21,6 +21,7 @@ data class RegisterUiState(
     val challenge: AuthChallenge? = null, val code: String = "", val resendSeconds: Int = 0,
     val sessions: List<AuthSessionSummary> = emptyList(), val nextCursor: String? = null,
     val profile: ProfileUiState = ProfileUiState(),
+    val passwordResetComplete: Boolean = false,
 ) { override fun toString() = "RegisterUiState(page=$page, sending=$sending)" }
 
 sealed interface AuthUiEvent {
@@ -218,7 +219,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
                         api.reset(resetToken ?: throw AuthFailure.InvalidResponse(),current.password,current.confirmation)
                         resetToken = null
                         mutableState.value = RegisterUiState(page = AuthPage.LOGIN_ENTRY,email = current.email,
-                            message = "Đặt lại mật khẩu thành công. Vui lòng đăng nhập.")
+                            message = "Đặt lại mật khẩu thành công. Vui lòng đăng nhập.", passwordResetComplete = true)
                         eventsChannel.send(AuthUiEvent.Notice("Đặt lại mật khẩu thành công"))
                     }
                     AuthPage.LINK_GOOGLE -> saveAuthenticated(api.linkGoogle(current.challenge!!.id,current.password),AuthPage.HOME_ENTRY)

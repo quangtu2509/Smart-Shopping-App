@@ -45,7 +45,7 @@ class RegisterUiTest {
         File(directory, "registration.png").outputStream().use {
             assertTrue(captureFixtureScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
         }
-        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).performScrollTo().performClick()
+        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).assertIsDisplayed().performClick()
         compose.onNodeWithText("Dùng địa chỉ Gmail của bạn (@gmail.com).").assertExists()
         compose.onNodeWithContentDescription("Email").performTextInput("shopper@gmail.com")
         compose.onNodeWithContentDescription("Mật khẩu").performTextInput(password)
@@ -81,7 +81,7 @@ class RegisterUiTest {
         assertRenderedField("Xác nhận mật khẩu", "fixture-password")
         compose.onNodeWithContentDescription("Ẩn mật khẩu").performScrollTo().performClick()
         assertRenderedField("Mật khẩu", hidden)
-        compose.onNodeWithText("Đăng nhập").performScrollTo().performClick()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Quay lại đăng nhập").performClick()
         assertEquals(2, loginClicks)
     }
@@ -102,12 +102,12 @@ class RegisterUiTest {
                 AuthContent(state, { _, _ -> }, { submits++ }, {}, {}, {}, {}, {})
             }
         }
-        compose.onNodeWithText("Thử lại sau 12s").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Thử lại sau 12s").assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Xác nhận mật khẩu").performScrollTo().performImeAction()
         assertEquals(0, submits)
         compose.runOnIdle { state = state.copy(sending = true) }
-        compose.onNodeWithText("Đang gửi…").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithText("Đăng nhập").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Đang gửi…").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Quay lại đăng nhập").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Hiện mật khẩu").assertIsNotEnabled()
         assertEquals(0, submits)
@@ -120,11 +120,11 @@ class RegisterUiTest {
             }
         }
         saveScreenshot("registration-dark.png")
-        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Đăng nhập").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).assertIsDisplayed().assertIsDisplayed()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().assertIsDisplayed()
     }
 
-    @Test fun largeFontRegistrationScrollsToActionsAndErrors() {
+    @Test fun largeFontRegistrationKeepsActionsAndScrollsToErrors() {
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
@@ -136,8 +136,8 @@ class RegisterUiTest {
         }
         compose.onNodeWithText("Email đã được sử dụng. Đăng nhập hoặc dùng email khác.").performScrollTo().assertIsDisplayed()
         saveScreenshot("registration-large-font.png")
-        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Đăng nhập").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).assertIsDisplayed().assertIsDisplayed()
+        compose.onNodeWithText("Đăng nhập").assertIsDisplayed().assertIsDisplayed()
         compose.onNodeWithText("Phiên được mã hóa trên thiết bị").performScrollTo().assertIsDisplayed()
         saveScreenshot("registration-large-font-actions.png")
     }
@@ -203,7 +203,7 @@ class RegisterUiTest {
         compose.onNodeWithContentDescription("Email").performTextInput(email)
         compose.onNodeWithContentDescription("Mật khẩu").performTextInput(password)
         compose.onNodeWithContentDescription("Xác nhận mật khẩu").performTextInput(password)
-        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).performScrollTo().performClick()
+        compose.onNode(hasText("Tạo tài khoản") and hasClickAction()).assertIsDisplayed().performClick()
         compose.waitUntil(30000) { vm.state.value.page == AuthPage.VERIFY_EMAIL || vm.state.value.message != null }
         assertEquals(AuthPage.VERIFY_EMAIL,vm.state.value.page)
         val code = fixtureCode(base,email)
@@ -215,8 +215,8 @@ class RegisterUiTest {
         assertEquals("Live registration did not reach onboarding", AuthPage.ONBOARDING, vm.state.value.page)
         compose.onNodeWithText("Thiết lập mua sắm").assertExists()
         compose.onNodeWithText(email).assertExists()
-        compose.onNodeWithText("3 cửa hàng").performScrollTo().assertIsSelected()
         compose.waitUntil(15000) { vm.state.value.profile.saved != null }
+        compose.onNodeWithText("3 cửa hàng").performScrollTo().assertIsSelected()
         val saved = runBlocking { store.load()!! }
         val confirmed = runBlocking { api.me(saved.accessToken) }
         assertEquals(email, confirmed.email); assertEquals(saved.account.userId, confirmed.userId)

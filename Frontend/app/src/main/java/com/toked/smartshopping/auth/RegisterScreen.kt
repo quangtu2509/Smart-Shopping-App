@@ -124,7 +124,9 @@ fun AuthContent(
     }
     if (state.page == AuthPage.LOGIN_ENTRY) {
         Surface(modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            LoginContent(state, onEdit, onSubmit, onRegister,
+            if (state.passwordResetComplete) {
+                ResetPasswordSuccessContent(onLogin, Modifier.fillMaxSize().safeDrawingPadding().imePadding())
+            } else LoginContent(state, onEdit, onSubmit, onRegister,
                 Modifier.fillMaxSize().safeDrawingPadding().imePadding(),onGoogle,onForgot)
         }
         return
