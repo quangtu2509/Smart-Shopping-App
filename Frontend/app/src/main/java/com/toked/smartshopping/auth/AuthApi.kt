@@ -53,6 +53,9 @@ interface AuthGateway {
     suspend fun planStore(accessToken: String, id: String): PlanStore = throw AuthFailure.Unconfigured()
     suspend fun plans(accessToken: String, cursor: String?): PlanPage = throw AuthFailure.Unconfigured()
     suspend fun plan(accessToken: String, id: String): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun catalog(accessToken: String, planId: String, filter: CatalogFilter, cursor: String?): CatalogPage = throw AuthFailure.Unconfigured()
+    suspend fun refreshCatalog(accessToken: String, planId: String, intent: CatalogRefreshIntent): ShoppingPlan = throw AuthFailure.Unconfigured()
+    suspend fun productDetail(accessToken: String, planId: String, productId: String): CatalogDetail = throw AuthFailure.Unconfigured()
     suspend fun savePlan(accessToken: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
     suspend fun shoppingProfile(accessToken: String): ShoppingProfile = throw AuthFailure.Unconfigured()
     suspend fun saveShoppingProfile(accessToken: String, patch: ProfilePatch): ShoppingProfile = throw AuthFailure.Unconfigured()
@@ -215,6 +218,14 @@ class AuthApi(baseUrl: String, allowLocalHttp: Boolean = false) : AuthGateway {
     override suspend fun savePlan(accessToken: String, mutation: PlanMutation): ShoppingPlanView = PlanDecoders.view(
         request("plans", if (mutation.planId == null) "POST" else "PATCH", mutation.body, accessToken,
             expected = if (mutation.planId == null) 201 else 200, segment = mutation.planId, idempotencyKey = mutation.key))
+
+    override suspend fun catalog(accessToken: String, planId: String, filter: CatalogFilter, cursor: String?): CatalogPage = CatalogDecoders.page(
+        request("plans",accessToken=accessToken,segments=listOf(planId,"catalog"),query=mapOf("retailer_id" to filter.retailer,"category_id" to filter.category,
+            "brand_id" to filter.brand,"q" to filter.query.takeIf { it.isNotBlank() },"sort" to filter.sort,"limit" to "20","cursor" to cursor)))
+    override suspend fun refreshCatalog(accessToken: String, planId: String, intent: CatalogRefreshIntent): ShoppingPlan = CatalogDecoders.refreshed(
+        request("plans","POST",intent.body,accessToken,expected=202,segments=listOf(planId,"catalog-refresh"),idempotencyKey=intent.key))
+    override suspend fun productDetail(accessToken: String, planId: String, productId: String): CatalogDetail = CatalogDecoders.detail(
+        request("products",accessToken=accessToken,segment=productId,query=mapOf("plan_id" to planId)))
 
     private suspend fun request(path: String, method: String = "GET", body: String? = null,
         accessToken: String? = null, expected: Int = 200, cursor: String? = null, segment: String? = null,

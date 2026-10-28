@@ -1,0 +1,472 @@
+{
+  "info": {
+    "name": "Smart Shopping CATALOG-01 (isolated fixture)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Only fake catalog and temporary PostgreSQL 55432. Never run against development."
+  },
+  "item": [
+    {
+      "name": "Auth required",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 401',()=>pm.response.to.have.status(401));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog first page",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog?limit=2&sort=PRICE_ASC"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));",
+              "const d=pm.response.json().data;",
+              "pm.test('page offers and decimal prices',()=>{pm.expect(d.items.length).eq(2);pm.expect(d.items[0].price).to.be.a('string');pm.expect(d.items[0].price_scope).eq('RETAILER');});",
+              "pm.test('no upstream raw data',()=>{pm.expect(d.items[0]).not.to.have.property('raw');});",
+              "pm.environment.set('cursor',d.next_cursor);pm.environment.set('product_id',d.items[0].product.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog next page",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog?limit=2&sort=PRICE_ASC&cursor={{cursor}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));",
+              "pm.test('next page',()=>pm.expect(pm.response.json().data.items.length).eq(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Owner boundary",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{other_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 404',()=>pm.response.to.have.status(404));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Retailer outside Plan",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog?retailer_id={{foreign_retailer}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 422',()=>pm.response.to.have.status(422));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Category outside Plan",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog?category_id={{foreign_category}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 422',()=>pm.response.to.have.status(422));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Empty search",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog?q=does-not-exist"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));",
+              "pm.test('empty is explicit',()=>{const d=pm.response.json().data;pm.expect(d.status).eq('EMPTY');pm.expect(d.items.length).eq(0);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bad page limit",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog?limit=0"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 422',()=>pm.response.to.have.status(422));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Product details",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/products/{{product_id}}?plan_id={{plan_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));",
+              "pm.test('context product',()=>pm.expect(pm.response.json().data.product.id).eq(pm.environment.get('product_id')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Detail context required",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/products/{{product_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 422',()=>pm.response.to.have.status(422));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refresh accepted",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{refresh_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog-refresh",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":1}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 202',()=>pm.response.to.have.status(202));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));",
+              "pm.test('loading snapshot',()=>{const d=pm.response.json().data;pm.expect(d.catalog_status).eq('LOADING');pm.expect(d.plan.version).eq(2);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Refresh replay",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{refresh_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog-refresh",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":1}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 202',()=>pm.response.to.have.status(202));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));",
+              "pm.test('same accepted version',()=>pm.expect(pm.response.json().data.plan.version).eq(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Key payload mismatch",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{refresh_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}/catalog-refresh",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\":2}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 409',()=>pm.response.to.have.status(409));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List and budget preserved",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200',()=>pm.response.to.have.status(200));",
+              "pm.test('request id',()=>pm.expect(pm.response.headers.get('X-Request-ID')).to.be.a('string'));",
+              "pm.test('no item mutation',()=>{const d=pm.response.json().data;pm.expect(d.items.length).eq(0);pm.expect(d.plan.budget).eq('500000');pm.expect(d.plan.budget_summary.selected_total).eq('0');});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -17,7 +17,7 @@ data class PlanStore(val id: String, val retailerId: String?, val name: String, 
 data class PlanStorePage(val items: List<PlanStore>, val nextCursor: String?, val warnings: List<String>, val attribution: List<String>)
 data class PlanMutation(val key: String, val body: String, val planId: String? = null)
 
-interface PlanGateway {
+interface PlanGateway : CatalogGateway {
     suspend fun planMaxStores(): Int
     suspend fun planReferences(kind: String, cursor: String?): PlanReferencePage
     suspend fun planStores(retailerId: String?, query: String, cursor: String?): PlanStorePage

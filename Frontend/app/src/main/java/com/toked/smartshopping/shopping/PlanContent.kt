@@ -33,7 +33,9 @@ import androidx.compose.ui.unit.dp
 import com.toked.smartshopping.R
 
 @Composable
-fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Modifier = Modifier) {
+fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Modifier = Modifier,
+    catalog: CatalogUiState = CatalogUiState(), onCatalogAction: (CatalogAction)->Unit = {}) {
+    if(state.catalogOpen) { CatalogContent(catalog,state,onCatalogAction,{onAction(PlanAction.Back)},modifier);return }
     BackHandler { onAction(PlanAction.Back) }
     val colors = MaterialTheme.colorScheme
     val number = when (state.step) { PlanStep.BUDGET -> 1; PlanStep.STORES -> 2; PlanStep.CATEGORIES -> 3; PlanStep.CLOSED, PlanStep.DETAIL -> 0 }
@@ -75,7 +77,7 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                         inputError?.let { ErrorText(it) }
                         val canEdit = state.saved?.plan?.status in editablePlans
                         Button(onClick = { onAction(when {
-                            state.step == PlanStep.DETAIL -> if (canEdit) PlanAction.Edit else PlanAction.Back
+                            state.step == PlanStep.DETAIL -> PlanAction.Browse
                             state.pending != null -> PlanAction.Save
                             else -> PlanAction.Continue
                         }) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
@@ -86,7 +88,7 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                                 state.saving -> "Đang lưu…"
                                 state.retrySeconds > 0 -> "Thử lại sau ${state.retrySeconds}s"
                                 state.pending != null -> "Thử lưu lại"
-                                state.step == PlanStep.DETAIL -> if (canEdit) "Chỉnh sửa kế hoạch" else "Về trang chủ"
+                                state.step == PlanStep.DETAIL -> "Xem sản phẩm"
                                 state.step == PlanStep.CATEGORIES && state.editing -> "Lưu thay đổi"
                                 state.step == PlanStep.CATEGORIES -> "Lưu kế hoạch"
                                 else -> "Tiếp tục"
@@ -94,6 +96,7 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                             if (!state.saving) { Spacer(Modifier.width(8.dp)); Icon(painterResource(R.drawable.ic_auth_arrow_forward), null, Modifier.size(20.dp)) }
                         }
                         if (state.step == PlanStep.DETAIL) Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            if(canEdit) TextButton({ onAction(PlanAction.Edit) }) { Text("Chỉnh sửa kế hoạch") }
                             TextButton({onAction(PlanAction.Back)}) {Text("Về trang chủ")}
                         }
                         else if (number > 0) Text(when (number) { 1 -> "Bước 2: Chọn nơi mua"; 2 -> "Đã chọn ${state.draft.selections.size}/${state.maxStores ?: 3} nơi mua"; else -> "${state.draft.categoryIds.size} nhóm hàng đã chọn" },

@@ -14,6 +14,7 @@ import io.ktor.utils.io.readRemaining
 import kotlinx.io.readByteArray
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.*
 import java.util.UUID
@@ -23,7 +24,7 @@ private val wireJson = Json { encodeDefaults = true; explicitNulls = true }
 private val requestIdKey = io.ktor.util.AttributeKey<String>("request-id")
 
 suspend fun main(args: Array<String>) {
-    require(args.isEmpty() || args.contentEquals(arrayOf("--check-catalog"))) { "Unknown backend command" }
+    require(args.isEmpty() || args.contentEquals(arrayOf("--check-catalog")) || args.contentEquals(arrayOf("--sync-catalog"))) { "Unknown backend command" }
     val catalogConfig = CatalogFlowConfig.fromEnvironment()
     if (args.contentEquals(arrayOf("--check-catalog"))) {
         val configured = catalogConfig ?: throw ProviderFailure(ProviderFailureCode.UNCONFIGURED)
@@ -36,6 +37,20 @@ suspend fun main(args: Array<String>) {
     fun required(name: String) = System.getenv(name)?.takeIf { it.isNotBlank() }
         ?: error("Set $name in the local environment before starting the backend")
     fun number(name: String, default: Long) = System.getenv(name)?.toLong() ?: default
+    if (args.contentEquals(arrayOf("--sync-catalog"))) {
+        val configured = catalogConfig ?: throw ProviderFailure(ProviderFailureCode.UNCONFIGURED)
+        Database(System.getenv("DB_URL") ?: "jdbc:postgresql://localhost:5432/smart_shopping",
+            System.getenv("DB_USER") ?: "smart_shopping_app", required("DB_PASSWORD")).use { database ->
+            database.migrate()
+            CatalogFlowClient(configured).use { provider ->
+                try {
+                    val result = CatalogImporter(database,provider).sync()
+                    println("Catalog sync: received=${result.received}; imported=${result.imported}; rejected=${result.rejected}; sources=${result.sources}; partial=${result.partial}.")
+                } catch (failure: ProviderFailure) { error("Catalog sync failed: ${failure.code}; retry_after_seconds=${failure.retryAfterSeconds}") }
+            }
+        }
+        return
+    }
     val challengeKey = try { java.util.Base64.getDecoder().decode(required("AUTH_CHALLENGE_KEY")) }
         catch (_: IllegalArgumentException) { error("AUTH_CHALLENGE_KEY must be Base64 with at least 32 decoded bytes") }
     require(challengeKey.size >= 32)
@@ -63,6 +78,7 @@ fun Application.authModule(service: AuthService, flows: AuthFlows? = null, catal
     if (catalog != null) attributes.put(catalogProviderKey, catalog)
     val profiles = service.shoppingProfiles()
     val plans = service.shoppingPlans()
+    val products = service.productService(catalog)
     fun extended() = flows ?: throw ApiFailure(503, "AUTH_PROVIDER_UNCONFIGURED")
     install(ContentNegotiation) { json(wireJson) }
     intercept(ApplicationCallPipeline.Setup) {
@@ -237,6 +253,26 @@ fun Application.authModule(service: AuthService, flows: AuthFlows? = null, catal
                 val b = body(call, setOf("expected_version"), setOf("budget", "selections", "category_ids"), stringsOnly = false)
                 val result = withContext(Dispatchers.IO) { plans.patch(access, call.parameters["plan_id"]!!, call.request.headers["Idempotency-Key"], b) }
                 call.respond(Envelope(result.data, meta(call)))
+            }
+            get("/plans/{plan_id}/catalog") {
+                val access = bearer(call)
+                val id = call.parameters["plan_id"]!!
+                val p = call.request.queryParameters
+                if ((p.names() - setOf("retailer_id","store_id","category_id","q","brand_id","sort","limit","cursor")).isNotEmpty()) throw ApiFailure(400,"UNKNOWN_FIELD")
+                val result = products.catalog(access,id,CatalogFilter(p["retailer_id"],p["store_id"],p["category_id"],p["q"],p["brand_id"],p["sort"] ?: "RELEVANCE",queryLimit(call),p["cursor"]))
+                products.pending(access,id)?.let { ticket -> this@authModule.launch { products.refresh(ticket) } }
+                call.respond(Envelope(result,meta(call)))
+            }
+            post("/plans/{plan_id}/catalog-refresh") {
+                val b = body(call,setOf("expected_version"),stringsOnly=false)
+                val result = products.requestRefresh(bearer(call),call.parameters["plan_id"]!!,call.request.headers["Idempotency-Key"],b)
+                val ticket = products.ticket(result)
+                this@authModule.launch { products.refresh(ticket) }
+                call.respond(HttpStatusCode.Accepted,Envelope(result.data,meta(call)))
+            }
+            get("/products/{product_id}") {
+                val planId = call.request.queryParameters["plan_id"] ?: throw ApiFailure(422,"VALIDATION_ERROR",listOf(FieldError("plan_id","REQUIRED")))
+                call.respond(Envelope(products.detail(bearer(call),planId,call.parameters["product_id"]!!),meta(call)))
             }
             get("/map/stores") {
                 val p = call.request.queryParameters

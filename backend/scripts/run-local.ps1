@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Configure','Run','CheckCatalog')][string]$Action = 'Run',
+    [ValidateSet('Configure','Run','CheckCatalog','SyncCatalog')][string]$Action = 'Run',
     [Alias('Sender')][string]$SenderEmail = '',
     [string]$WebClientId = '803153983048-beki7emtkn0ph45sjm5bs4emud5mkn1o.apps.googleusercontent.com'
 )
@@ -38,16 +38,21 @@ function Import-CatalogFlowEnvironment {
     } finally { $providerConfig.ApiKey.Dispose() }
 }
 
-if ($Action -eq 'CheckCatalog') {
-    $providerNames = @('CATALOGFLOW_API_KEY','CATALOGFLOW_BASE_URL')
+if ($Action -in @('CheckCatalog','SyncCatalog')) {
+    $providerNames = @('CATALOGFLOW_API_KEY','CATALOGFLOW_BASE_URL','DB_PASSWORD')
     $providerPrevious = @{}
     foreach ($name in $providerNames) { $providerPrevious[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
     try {
         Import-CatalogFlowEnvironment
         if ([string]::IsNullOrWhiteSpace($env:CATALOGFLOW_API_KEY)) { throw 'Configure CatalogFlow using catalogflow-local.ps1 -Action Configure first.' }
+        if ($Action -eq 'SyncCatalog' -and [string]::IsNullOrWhiteSpace($env:DB_PASSWORD)) {
+            $dbSecret = Read-Host 'PostgreSQL password for smart_shopping_app (hidden)' -AsSecureString
+            $env:DB_PASSWORD = Get-SecretText $dbSecret
+        }
         Push-Location -LiteralPath $backendRoot
         try {
-            & .\gradlew.bat run '--args=--check-catalog'
+            $catalogArgument = if ($Action -eq 'SyncCatalog') { '--args=--sync-catalog' } else { '--args=--check-catalog' }
+            & .\gradlew.bat run $catalogArgument
             if ($LASTEXITCODE -ne 0) { throw 'CatalogFlow Kotlin check failed. See the safe failure code above.' }
         }
         finally { Pop-Location }

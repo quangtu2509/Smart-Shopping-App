@@ -134,6 +134,13 @@ try {
     Expect-Failure { & $script:fixtureScript -Action Run } 'Backend stopped with an error'
     Assert-EnvironmentRestored
     $script:passed++
+    Reset-Fixture; $global:SmtpFixtureState.providerExists = $true
+    $env:CATALOGFLOW_API_KEY = $null; $env:CATALOGFLOW_BASE_URL = $null
+    [IO.File]::WriteAllText($script:stubPath, "@echo off`r`nif not `"%~3`"==`"--sync-catalog`" exit /b 2`r`nif not `"%CATALOGFLOW_API_KEY%`"==`"fixture-catalog-key`" exit /b 3`r`nif not `"%DB_PASSWORD%`"==`"before-DB_PASSWORD`" exit /b 4`r`nexit /b 0`r`n")
+    & $script:fixtureScript -Action SyncCatalog | Out-Null
+    Assert-True ($global:SmtpFixtureState.prompts.Count -eq 0 -and $global:SmtpFixtureState.imported.Count -eq 1) 'Sync must reuse provider and DB environment without loading auth secrets'
+    Assert-True ($env:DB_PASSWORD -eq 'before-DB_PASSWORD' -and [string]::IsNullOrEmpty($env:CATALOGFLOW_API_KEY)) 'Sync must restore secrets environment'
+    $script:passed++
     Write-Output ("Passed {0} auth/provider configuration checks using fake config and a non-Gradle stub." -f $script:passed)
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureRoot)

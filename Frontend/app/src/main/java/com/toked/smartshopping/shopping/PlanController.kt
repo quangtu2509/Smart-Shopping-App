@@ -9,6 +9,7 @@ import java.util.UUID
 
 enum class PlanStep { CLOSED, BUDGET, STORES, CATEGORIES, DETAIL }
 data class PlanUiState(
+    val catalogOpen: Boolean = false,
     val step: PlanStep = PlanStep.CLOSED, val draft: PlanDraft = PlanDraft(), val saved: ShoppingPlanView? = null,
     val editing: Boolean = false, val maxStores: Int? = null, val retailers: List<PlanReference> = emptyList(),
     val categories: List<PlanReference> = emptyList(), val stores: Map<String, PlanStore> = emptyMap(), val retailerQuery: String = "",
@@ -43,6 +44,7 @@ sealed interface PlanAction {
     data object MorePlans : PlanAction
     data class Open(val id: String) : PlanAction
     data object Edit : PlanAction
+    data object Browse : PlanAction
     data object ReloadConflict : PlanAction
     data object CancelConflict : PlanAction
     data object ConfirmExit : PlanAction
@@ -53,6 +55,7 @@ sealed interface PlanAction {
 class PlanController(private val gateway: PlanGateway, private val scope: CoroutineScope, private val onSessionEnded: () -> Unit) {
     private val mutable = MutableStateFlow(PlanUiState())
     val state = mutable.asStateFlow()
+    val catalog = CatalogController(gateway,scope,{ view -> mutable.update { it.copy(saved=view,draft=PlanDraft.from(view.plan)) } },onSessionEnded)
     private var referenceJob: Job? = null
     private var listJob: Job? = null
     private var formJob: Job? = null
@@ -61,6 +64,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     private var owner: String? = null
 
     fun clear() {
+        catalog.clear()
         referenceJob?.cancel(); listJob?.cancel(); formJob?.cancel(); branchJob?.cancel()
         retryJob?.cancel()
         referenceJob = null; listJob = null; formJob = null; branchJob = null
@@ -103,6 +107,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
             PlanAction.MorePlans -> loadPlans(more = true)
             is PlanAction.Open -> open(action.id)
             PlanAction.Edit -> editSaved()
+            PlanAction.Browse -> browse()
             PlanAction.ReloadConflict -> state.value.saved?.plan?.id?.let { open(it) }
             PlanAction.CancelConflict -> mutable.update { it.copy(conflict = false) }
             PlanAction.ConfirmExit -> close()
@@ -132,6 +137,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     }
     private fun back() {
         val s = state.value
+        if (s.catalogOpen) { catalog.close();mutable.update { it.copy(catalogOpen=false) };return }
         if (s.saving || s.opening) return
         if (s.branchesOpen) { onAction(PlanAction.CloseBranches); return }
         if (s.pending != null || s.step == PlanStep.BUDGET) {
@@ -148,6 +154,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     }
     private fun close() {
         if (state.value.saving) return
+        catalog.close()
         referenceJob?.cancel(); branchJob?.cancel(); formJob?.cancel(); retryJob?.cancel()
         mutable.update { PlanUiState(plans = it.plans, nextCursor = it.nextCursor) }
         loadPlans()
@@ -256,6 +263,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
                 mutable.update { it.copy(saving = false, pending = null, saved = saved, draft = PlanDraft.from(saved.plan),
                     step = PlanStep.DETAIL, editing = false, message = "Đã lưu kế hoạch.") }
                 loadPlans()
+                browse()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 if (ended(failure)) return@launch
@@ -278,6 +286,12 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
                 } else mutable.update { it.copy(saving = false, message = "Chưa xác nhận được kết quả lưu. Nhấn Thử lưu lại để gửi đúng yêu cầu cũ, tránh tạo nháp trùng.") }
             }
         }
+    }
+    private fun browse() {
+        val view=state.value.saved ?: return
+        if(state.value.saving || state.value.opening) return
+        mutable.update { it.copy(catalogOpen=true) }
+        catalog.open(view)
     }
     private fun ended(failure: Exception): Boolean {
         if (failure !is AuthFailure.SessionEnded) return false

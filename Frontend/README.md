@@ -1,5 +1,7 @@
 # Android — AUTH-01/02
 
+CATALOG-01 đã có màn sản phẩm theo Plan, nối Product Service/API catalog với CatalogFlow, tìm/lọc/sắp xếp/tải thêm/chi tiết và các trạng thái lỗi/cache. Xem [hướng dẫn catalog](docs/catalog/README.md); backend cần SyncCatalog một lần và chạy bản mới. List/Compare/PRICE-01 nâng cao còn là các task riêng.
+
 SC-04 Home đã có giao diện Compose theo Stitch: header, tìm kiếm, tạo kế hoạch, các khu vực kế hoạch/giá/lịch sử/mẫu và năm mục điều hướng. Cá nhân mở hồ sơ mặc định, quản lý phiên và xác nhận đăng xuất. Dữ liệu nghiệp vụ chưa được tích hợp; Home dùng trạng thái rỗng, các đích chưa triển khai có thông báo rõ, không hiển thị số liệu mẫu như dữ liệu thật. Source: `app/src/main/java/com/toked/smartshopping/home/HomeContent.kt`; UI tests: `app/src/androidTest/java/com/toked/smartshopping/home/HomeUiTest.kt`.
 
 Mở project Frontend trong Android Studio. Compile/target SDK 36, min SDK 26. App có đăng ký/đăng nhập Compose theo Stitch, validation, API-AUTH-01–16, encrypted session, refresh và quản lý phiên. Đăng ký qua OTP/Google → màn hình thành công → onboarding/default Profile; đăng nhập và khôi phục phiên vào Home đúng User. Chỉnh Profile và Home nghiệp vụ đầy đủ vẫn thuộc các task riêng.

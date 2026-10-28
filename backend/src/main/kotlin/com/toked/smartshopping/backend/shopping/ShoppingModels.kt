@@ -17,6 +17,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class Product(
     val id: String, val name: String, val category_id: String, val unit: String, val quantity_step: String,
     val brand_id: String? = null, val barcode: String? = null, val image_url: String? = null, val package_size: String? = null,
+    val brand_name: String? = null, val package_label: String? = null,
 )
 @Serializable data class Coordinate(val latitude: Double, val longitude: Double)
 @Serializable data class StoreSnapshot(

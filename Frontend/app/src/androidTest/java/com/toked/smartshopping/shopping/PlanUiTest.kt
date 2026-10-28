@@ -230,10 +230,12 @@ class PlanUiTest {
         assertTrue("plan-food" in vm.plans.state.value.draft.categoryIds)
         button("Lưu kế hoạch").performClick()
         compose.waitUntil(15000) { vm.plans.state.value.step == PlanStep.DETAIL && vm.plans.state.value.saved != null }
+        compose.waitUntil(15000) { !vm.plans.catalog.state.value.loading && !vm.plans.catalog.state.value.refreshing && (vm.plans.state.value.saved?.plan?.version ?: 0)>=3 }
+        compose.onNodeWithContentDescription("Quay lại kế hoạch").performClick()
         val saved = vm.plans.state.value.saved!!
         val access = store.current!!.accessToken
         assertEquals(saved, runBlocking { api.plan(access, saved.plan.id) })
-        assertEquals(1, saved.plan.version); assertEquals(PlanState.DRAFT, saved.plan.status)
+        assertEquals(3, saved.plan.version); assertEquals(PlanState.DRAFT, saved.plan.status)
         assertEquals(2, saved.plan.selections.size)
         picture("draft-live-saved")
         button("Về trang chủ").performClick()

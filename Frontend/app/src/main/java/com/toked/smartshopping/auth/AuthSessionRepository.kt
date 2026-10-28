@@ -49,6 +49,9 @@ class AuthSessionRepository(private val api: AuthGateway, private val store: Ses
     override suspend fun planStore(id: String): PlanStore = mutex.withLock { authorized { api.planStore(it, id) } }
     override suspend fun plans(cursor: String?): PlanPage = mutex.withLock { authorized { api.plans(it, cursor) } }
     override suspend fun plan(id: String): ShoppingPlanView = mutex.withLock { authorized { api.plan(it, id) } }
+    override suspend fun catalog(planId: String, filter: CatalogFilter, cursor: String?): CatalogPage = mutex.withLock { authorized { api.catalog(it,planId,filter,cursor) } }
+    override suspend fun refreshCatalog(planId: String, intent: CatalogRefreshIntent): ShoppingPlan = mutex.withLock { authorized { api.refreshCatalog(it,planId,intent) } }
+    override suspend fun productDetail(planId: String, productId: String): CatalogDetail = mutex.withLock { authorized { api.productDetail(it,planId,productId) } }
     override suspend fun savePlan(mutation: PlanMutation): ShoppingPlanView = mutex.withLock { authorized { api.savePlan(it, mutation) } }
 
     suspend fun revoke(id: String): Boolean = mutex.withLock {

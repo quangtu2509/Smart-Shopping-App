@@ -40,6 +40,7 @@ tasks.test {
     inputs.file("postman/auth00.postman_collection.json")
     inputs.file("postman/profile01.postman_collection.json")
     inputs.file("postman/plan01.postman_collection.json")
+    inputs.file("postman/catalog01.postman_collection.json")
     inputs.dir("src/test/javascript")
     inputs.file("scripts/run-local.ps1")
     inputs.file("scripts/catalogflow-local.ps1")

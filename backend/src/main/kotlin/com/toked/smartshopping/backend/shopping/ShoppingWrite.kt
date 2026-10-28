@@ -100,9 +100,16 @@ class ShoppingWrite internal constructor(c: Connection, owner: UUID, private val
             "Nơi mua hoặc nhóm hàng đã đổi. Cần tải lại catalog và kiểm tra các món đã chọn.", result.items.map { it.id })) else result
     }
     /** Catalog adapters will call this after their I/O has finished, never from inside a provider transaction. */
+    fun queueCatalogRefresh(id: UUID, expected: Int): PlanView {
+        val current = row(id); expect(current, expected)
+        if (current.catalog == CatalogStatus.LOADING) throw ApiFailure(409, "CATALOG_REFRESH_IN_PROGRESS")
+        val view = catalogState(id, expected, CatalogStatus.LOADING)
+        execute(c, "INSERT INTO catalog_refresh_jobs(plan_id,version,owner_id,status) VALUES (?,?,?,'QUEUED')", id, view.plan.version, owner)
+        return view
+    }
     fun catalogState(id: UUID, expected: Int, state: CatalogStatus): PlanView {
         val p = row(id); expect(p, expected)
-        if (p.status !in setOf(PlanStatus.DRAFT, PlanStatus.LOADING_PRODUCTS, PlanStatus.BROWSING_PRODUCTS, PlanStatus.BUILDING_LIST)) throw ApiFailure(409, "INVALID_STATE")
+        if (p.status !in setOf(PlanStatus.DRAFT, PlanStatus.LOADING_PRODUCTS, PlanStatus.BROWSING_PRODUCTS, PlanStatus.BUILDING_LIST, PlanStatus.COMPARING, PlanStatus.OPTIMIZING)) throw ApiFailure(409, "INVALID_STATE")
         if (p.catalog == state) return plan(id)
         if (state != CatalogStatus.LOADING && p.catalog != CatalogStatus.LOADING) throw ApiFailure(409, "INVALID_STATE")
         val hasItems = records(id, p.currency).isNotEmpty()

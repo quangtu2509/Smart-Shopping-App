@@ -8,7 +8,7 @@ import java.util.Base64
 import java.util.UUID
 
 @Serializable data class ShoppingReference(val id: String, val name: String, val status: String, val parent_id: String? = null,
-    val code: String? = null, val logo_url: String? = null)
+    val code: String? = null, val logo_url: String? = null, val retailer_ids:List<String> = emptyList())
 
 class ShoppingProfiles(private val db: Database, private val auth: AuthService) {
     private val json = Json { encodeDefaults = true }
@@ -102,7 +102,13 @@ class ShoppingProfiles(private val db: Database, private val auth: AuthService) 
         val rows = query(c, "SELECT id,name,status,${if (kind == "categories") "parent_id" else "NULL AS parent_id"},$extra FROM $table$where ORDER BY id LIMIT ?", *values.toTypedArray()).use { s ->
             s.executeQuery().use { r -> buildList { while (r.next()) add(ShoppingReference(r.getString(1), r.getString(2), r.getString(3), r.getString(4), r.getString(5), r.getString(6))) } }
         }
-        val items=rows.take(limit)
+        val pageItems=rows.take(limit)
+        val retailers=mutableMapOf<String,MutableSet<String>>()
+        if(kind=="categories" && pageItems.isNotEmpty()) {
+            query(c,"SELECT DISTINCT unnest(category_ids) AS category_id,retailer_id FROM catalog_entries WHERE active AND category_ids && ?::text[]",
+                c.createArrayOf("text",pageItems.map {it.id}.toTypedArray())).use {s->s.executeQuery().use {r->while(r.next()) retailers.getOrPut(r.getString(1)){linkedSetOf()}.add(r.getString(2))}}
+        }
+        val items=pageItems.map {it.copy(retailer_ids=retailers[it.id]?.sorted() ?: emptyList())}
         Page(items, if (rows.size > limit) Base64.getUrlEncoder().withoutPadding().encodeToString(json.encodeToString(scope + items.last().id).toByteArray()) else null)
     }
 

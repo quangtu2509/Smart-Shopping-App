@@ -5,6 +5,8 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.routing.*
 import io.ktor.server.response.*
 import java.util.concurrent.ConcurrentHashMap
+import com.toked.smartshopping.backend.catalog.CatalogImporter
+import kotlinx.coroutines.runBlocking
 
 /** Explicit test-only executable: loopback, isolated PostgreSQL, no real email or Google credentials. */
 fun main() {
@@ -12,6 +14,8 @@ fun main() {
     val db = Database(url,"auth00_test","")
     db.migrate()
     seedPlanReferences(db)
+    val catalogProvider=FixtureCatalogProvider()
+    runBlocking { CatalogImporter(db,catalogProvider).sync() }
     db.transaction { c ->
         execute(c, "INSERT INTO shopping_categories(id,name,status) VALUES ('fixture-food','Thực phẩm thử nghiệm','ACTIVE') ON CONFLICT DO NOTHING")
         execute(c, "INSERT INTO shopping_brands(id,name,status) VALUES ('fixture-brand','Thương hiệu thử nghiệm','ACTIVE') ON CONFLICT DO NOTHING")
@@ -22,7 +26,7 @@ fun main() {
         GoogleVerifier { throw ApiFailure(401,"GOOGLE_TOKEN_INVALID") },ByteArray(32) { 9 })
     try {
         embeddedServer(Netty,host = "127.0.0.1",port = 18080) {
-            authModule(service,flows)
+            authModule(service,flows,catalogProvider)
             routing {
                 get("/fixture/code") { call.respondText(codes[call.request.queryParameters["email"]].orEmpty()) }
                 get("/fixture/health") { call.respondText("isolated-auth-fixture") }

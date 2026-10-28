@@ -21,7 +21,7 @@ data class ShoppingWarning(val code: String, val message: String, val affectedId
 data class Selection(val retailerId: String?, val storeId: String?)
 data class OfferRef(val kind: String, val id: String)
 data class Product(val id: String, val name: String, val categoryId: String, val unit: String, val quantityStep: Quantity,
-    val brandId: String?, val barcode: String?, val imageUrl: String?, val packageSize: BigDecimal?)
+    val brandId: String?, val barcode: String?, val imageUrl: String?, val packageSize: BigDecimal?, val brandName:String?=null, val packageLabel:String?=null)
 data class Offer(val ref: OfferRef, val version: String, val product: Product?, val storeProductId: String?, val retailerId: String?,
     val storeId: String?, val currency: String, val price: Money?, val source: String?, val observedAt: String?, val priceScope: String,
     val freshness: String, val stockStatus: String, val confidence: Double?, val listPrice: Money?, val promotion: String?, val unitPrice: Money?,
@@ -96,12 +96,13 @@ object ShoppingContracts {
         return BudgetSummary(money(json,"budget",currency),money(json,"selected_total",currency),money(json,"remaining_budget",currency,true),
             complete,missing,money(json,"over_budget_amount",currency),warnings(json))
     }
-    private fun offer(json: JSONObject): Offer {
+    internal fun offer(json: JSONObject): Offer {
         require(json.has("product") && json.has("confidence"))
         val currency=text(json,"currency")
         val product=if (json.isNull("product")) null else json.getJSONObject("product").let { p ->
             Product(text(p,"id"),text(p,"name"),text(p,"category_id"),text(p,"unit"),Quantity.parse(text(p,"quantity_step")),
-                optional(p,"brand_id"),optional(p,"barcode"),optional(p,"image_url"),optional(p,"package_size")?.let { decimal(it,false) })
+                optional(p,"brand_id"),optional(p,"barcode"),optional(p,"image_url"),optional(p,"package_size")?.let { decimal(it,false) },
+                if(p.has("brand_name")) optional(p,"brand_name") else null, if(p.has("package_label")) optional(p,"package_label") else null)
         }
         fun optionalMoney(field: String): Money? { require(json.has(field)); return if (json.isNull(field)) null else money(json,field,currency) }
         return Offer(ref(json.getJSONObject("ref")),text(json,"version"),product,optional(json,"store_product_id"),optional(json,"retailer_id"),

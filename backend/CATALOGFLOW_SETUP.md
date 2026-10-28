@@ -4,7 +4,7 @@ Nguồn được người dùng chọn ngày 27/10/2026: [CatalogFlow](https://c
 
 Đường kết nối cần triển khai: **Android → API Smart Shopping → Product Service/adapter → CatalogFlow**. Khóa CatalogFlow chỉ nằm trên máy backend. Access token đăng nhập Smart Shopping và khóa provider là hai loại khác nhau.
 
-Backend đã có adapter Kotlin và nạp cấu hình local. Product Service/API catalog và giao diện Android là bước tích hợp CATALOG-01 tiếp theo; cấu hình khóa chưa làm sản phẩm tự xuất hiện trên app.
+Backend đã có adapter Kotlin và nạp cấu hình local. CATALOG-01 đã nối Product Service/API catalog và giao diện Android; cần [SyncCatalog rồi chạy backend bản mới](CATALOG_API.md) để app đọc reference và sản phẩm đã nhập. Chỉ cấu hình khóa chưa làm sản phẩm tự xuất hiện trên app.
 
 ## Nhập khóa trên máy tính
 
@@ -59,7 +59,7 @@ Run vẫn dùng cấu hình auth/PostgreSQL hiện có và sẽ tự nạp `.env
 
 `ProviderPage` gồm items/total/page/limit/rejectedItems/warnings/partial. Item sai identity/name/website, chưa duyệt hoặc không phải object bị loại và báo partial; duplicate cùng website/id được loại, không ghép giữa retailer chỉ vì cùng tên. Không cache hoặc trả raw/evidence qua hợp đồng này. Query/filter chưa kiểm chứng với toàn bộ retailer thật; kiểm thử fixture xác nhận encoding và truyền tham số.
 
-`ProviderProduct` giữ giá và timestamp dạng BigDecimal, không đi qua Double. Giá null/không hợp lệ khác giá 0. Giữ riêng price/apiPrice/originalPrice/salePrice/priceOptions; không chọn giá biến thể hoặc quy cách thay người dùng. Currency/source/observedAt/stale thiếu sinh warning. Lớp adapter chỉ giữ dữ liệu nguồn; CATALOG-01 sẽ chuyển sang Product/Offer sau khi xác minh mapping, thời gian và phạm vi giá. Không giả barcode, tồn kho hoặc thời gian hiện tại. `hasStoreMetadata` chỉ báo có dữ liệu store, không xác nhận chi nhánh; khi có metadata này nhưng chưa xác minh phạm vi áp dụng thì giá bị giữ null. Mẫu probe thật trước đây có stores rỗng, không suy toàn bộ catalog đều như vậy. PRICE-01 còn policy và điều kiện giá nâng cao.
+`ProviderProduct` giữ giá và timestamp dạng BigDecimal, không đi qua Double. Giá null/không hợp lệ khác giá 0. Giữ riêng price/apiPrice/originalPrice/salePrice/priceOptions; không chọn giá biến thể hoặc quy cách thay người dùng. Currency/source/observedAt/stale thiếu sinh warning. Lớp adapter chỉ giữ dữ liệu nguồn; [CatalogNormalizer của CATALOG-01](CATALOG_API.md#normalize-và-cache) chuyển sang Product/Offer theo chính sách VND, Unix seconds và đếm đơn vị niêm yết có cảnh báo. Không giả barcode, tồn kho hoặc thời gian hiện tại. `hasStoreMetadata` chỉ báo có dữ liệu store, không xác nhận chi nhánh; khi có metadata này nhưng chưa xác minh phạm vi áp dụng thì giá bị giữ null. Mẫu probe thật trước đây có stores rỗng, không suy toàn bộ catalog đều như vậy. PRICE-01 còn policy và điều kiện giá nâng cao.
 
 Kiểm thử script dùng khóa/sản phẩm giả, không gọi provider hay database:
 
