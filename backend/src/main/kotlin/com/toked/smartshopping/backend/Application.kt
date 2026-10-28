@@ -47,6 +47,7 @@ fun main() {
 
 fun Application.authModule(service: AuthService, flows: AuthFlows? = null) {
     val profiles = service.shoppingProfiles()
+    val plans = service.shoppingPlans()
     fun extended() = flows ?: throw ApiFailure(503, "AUTH_PROVIDER_UNCONFIGURED")
     install(ContentNegotiation) { json(wireJson) }
     intercept(ApplicationCallPipeline.Setup) {
@@ -200,7 +201,38 @@ fun Application.authModule(service: AuthService, flows: AuthFlows? = null) {
                 val result = withContext(Dispatchers.IO) { profiles.patch(bearer(call), call.request.headers["Idempotency-Key"], b) }
                 call.respond(Envelope(result, meta(call)))
             }
-            for (kind in listOf("categories", "brands")) get("/$kind") {
+            post("/plans") {
+                val access = bearer(call)
+                val b = body(call, setOf("budget", "currency", "selections", "category_ids"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { plans.create(access, call.request.headers["Idempotency-Key"], b) }
+                result.location?.let { call.response.header(HttpHeaders.Location, it) }
+                call.respond(HttpStatusCode.Created, Envelope(result.data, meta(call)))
+            }
+            get("/plans") {
+                val p = call.request.queryParameters
+                val result = withContext(Dispatchers.IO) { plans.list(bearer(call), p["status"], queryLimit(call), p["cursor"]) }
+                call.respond(Envelope(result, meta(call)))
+            }
+            get("/plans/{plan_id}") {
+                val result = withContext(Dispatchers.IO) { plans.get(bearer(call), call.parameters["plan_id"]!!) }
+                call.respond(Envelope(result, meta(call)))
+            }
+            patch("/plans/{plan_id}") {
+                val access = bearer(call)
+                val b = body(call, setOf("expected_version"), setOf("budget", "selections", "category_ids"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { plans.patch(access, call.parameters["plan_id"]!!, call.request.headers["Idempotency-Key"], b) }
+                call.respond(Envelope(result.data, meta(call)))
+            }
+            get("/map/stores") {
+                val p = call.request.queryParameters
+                val result = withContext(Dispatchers.IO) { plans.stores(bearer(call), p["bbox"], p["q"], p["retailer_ids"], queryLimit(call), p["cursor"]) }
+                call.respond(Envelope(result, meta(call)))
+            }
+            get("/stores/{store_id}") {
+                val result = withContext(Dispatchers.IO) { plans.store(bearer(call), call.parameters["store_id"]!!) }
+                call.respond(Envelope(result, meta(call)))
+            }
+            for (kind in listOf("categories", "brands", "retailers")) get("/$kind") {
                 val parameters = call.request.queryParameters
                 val limit = parameters["limit"]?.toIntOrNull() ?: if (parameters["limit"] == null) 20
                     else throw ApiFailure(422, "VALIDATION_ERROR", listOf(FieldError("limit", "INVALID_INTEGER")))
@@ -222,6 +254,9 @@ private suspend fun respondAuthStep(call: ApplicationCall, result: Any) {
 }
 
 private fun meta(call: ApplicationCall) = Meta(call.attributes[requestIdKey])
+private fun queryLimit(call: ApplicationCall): Int = call.request.queryParameters["limit"]?.let {
+    it.toIntOrNull() ?: throw ApiFailure(422, "VALIDATION_ERROR", listOf(FieldError("limit", "INVALID_INTEGER")))
+} ?: 20
 private fun bearer(call: ApplicationCall): String {
     val header = call.request.headers[HttpHeaders.Authorization] ?: throw ApiFailure(401,"AUTH_REQUIRED")
     val pieces = header.split(' ')

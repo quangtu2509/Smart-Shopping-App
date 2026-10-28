@@ -7,7 +7,8 @@ import java.sql.Connection
 import java.util.Base64
 import java.util.UUID
 
-@Serializable data class ShoppingReference(val id: String, val name: String, val status: String, val parent_id: String? = null)
+@Serializable data class ShoppingReference(val id: String, val name: String, val status: String, val parent_id: String? = null,
+    val code: String? = null, val logo_url: String? = null)
 
 class ShoppingProfiles(private val db: Database, private val auth: AuthService) {
     private val json = Json { encodeDefaults = true }
@@ -76,7 +77,7 @@ class ShoppingProfiles(private val db: Database, private val auth: AuthService) 
 
     fun references(access: String, kind: String, q: String?, parent: String?, limit: Int, cursor: String?): Page<ShoppingReference> = db.transaction { c ->
         val owner = auth.authenticatedOwner(c, access)
-        require(kind in setOf("categories", "brands"))
+        require(kind in setOf("categories", "brands", "retailers"))
         if (limit !in 1..100) invalid("limit", "OUT_OF_RANGE")
         if ((q?.length ?: 0) > 200) invalid("q", "TOO_LONG")
         val scope = listOf(owner.toString(), kind, q, parent)
@@ -86,7 +87,7 @@ class ShoppingProfiles(private val db: Database, private val auth: AuthService) 
             if (decoded.size != 5 || decoded.take(4) != scope) throw ApiFailure(400, "INVALID_CURSOR")
             decoded.last() ?: throw ApiFailure(400, "INVALID_CURSOR")
         }
-        val table = if (kind == "categories") "shopping_categories" else "shopping_brands"
+        val table = when (kind) { "categories" -> "shopping_categories"; "retailers" -> "shopping_retailers"; else -> "shopping_brands" }
         val clauses = mutableListOf<String>()
         val values = mutableListOf<Any?>()
         if (q != null) { clauses += "position(lower(?) in lower(name)) > 0"; values += q }
@@ -97,8 +98,9 @@ class ShoppingProfiles(private val db: Database, private val auth: AuthService) 
         if (after != null) { clauses += "id > ?"; values += after }
         values += limit + 1
         val where = if (clauses.isEmpty()) "" else " WHERE " + clauses.joinToString(" AND ")
-        val rows = query(c, "SELECT id,name,status,${if (kind == "categories") "parent_id" else "NULL AS parent_id"} FROM $table$where ORDER BY id LIMIT ?", *values.toTypedArray()).use { s ->
-            s.executeQuery().use { r -> buildList { while (r.next()) add(ShoppingReference(r.getString(1), r.getString(2), r.getString(3), r.getString(4))) } }
+        val extra = if (kind == "retailers") "code,logo_url" else "NULL AS code,NULL AS logo_url"
+        val rows = query(c, "SELECT id,name,status,${if (kind == "categories") "parent_id" else "NULL AS parent_id"},$extra FROM $table$where ORDER BY id LIMIT ?", *values.toTypedArray()).use { s ->
+            s.executeQuery().use { r -> buildList { while (r.next()) add(ShoppingReference(r.getString(1), r.getString(2), r.getString(3), r.getString(4), r.getString(5), r.getString(6))) } }
         }
         val items=rows.take(limit)
         Page(items, if (rows.size > limit) Base64.getUrlEncoder().withoutPadding().encodeToString(json.encodeToString(scope + items.last().id).toByteArray()) else null)

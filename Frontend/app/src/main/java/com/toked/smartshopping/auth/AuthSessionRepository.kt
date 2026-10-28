@@ -5,11 +5,12 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import com.toked.smartshopping.shopping.*
 
 data class LogoutOutcome(val serverRevoked: Boolean, val localCleared: Boolean)
 
 /** One owner serializes refresh, token persistence and protected requests. Callers own cancellation. */
-class AuthSessionRepository(private val api: AuthGateway, private val store: SessionStore) {
+class AuthSessionRepository(private val api: AuthGateway, private val store: SessionStore) : PlanGateway {
     private val mutex = Mutex()
     private var session: AuthSession? = null
     private var lastLogoutConfirmed = false
@@ -42,6 +43,13 @@ class AuthSessionRepository(private val api: AuthGateway, private val store: Ses
     suspend fun shoppingProfile(): ShoppingProfile = mutex.withLock { authorized { api.shoppingProfile(it) } }
     suspend fun saveShoppingProfile(patch: ProfilePatch): ShoppingProfile = mutex.withLock { authorized { api.saveShoppingProfile(it, patch) } }
     suspend fun references(kind: String, cursor: String?): ReferencePage = mutex.withLock { authorized { api.references(it, kind, cursor) } }
+    override suspend fun planMaxStores(): Int = shoppingProfile().maxStores
+    override suspend fun planReferences(kind: String, cursor: String?): PlanReferencePage = mutex.withLock { authorized { api.planReferences(it, kind, cursor) } }
+    override suspend fun planStores(retailerId: String?, query: String, cursor: String?): PlanStorePage = mutex.withLock { authorized { api.planStores(it, retailerId, query, cursor) } }
+    override suspend fun planStore(id: String): PlanStore = mutex.withLock { authorized { api.planStore(it, id) } }
+    override suspend fun plans(cursor: String?): PlanPage = mutex.withLock { authorized { api.plans(it, cursor) } }
+    override suspend fun plan(id: String): ShoppingPlanView = mutex.withLock { authorized { api.plan(it, id) } }
+    override suspend fun savePlan(mutation: PlanMutation): ShoppingPlanView = mutex.withLock { authorized { api.savePlan(it, mutation) } }
 
     suspend fun revoke(id: String): Boolean = mutex.withLock {
         val current = session ?: throw AuthFailure.SessionEnded()

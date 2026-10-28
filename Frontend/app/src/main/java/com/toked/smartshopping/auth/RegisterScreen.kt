@@ -21,10 +21,12 @@ import android.widget.Toast
 import androidx.lifecycle.Lifecycle
 import com.toked.smartshopping.ui.theme.SmartShoppingTheme
 import com.toked.smartshopping.home.HomeContent
+import com.toked.smartshopping.shopping.*
 
 @Composable
 fun RegisterScreen(viewModel: RegisterViewModel, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val plans by viewModel.plans.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -41,6 +43,9 @@ fun RegisterScreen(viewModel: RegisterViewModel, modifier: Modifier = Modifier) 
         }
     }
     LaunchedEffect(viewModel) { viewModel.start() }
+    LaunchedEffect(state.page, state.account?.userId, viewModel) {
+        if (state.page == AuthPage.HOME_ENTRY) state.account?.userId?.let(viewModel.plans::home)
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onResume() }
     BackHandler(enabled = state.page in setOf(AuthPage.REGISTER,AuthPage.FORGOT,AuthPage.VERIFY_EMAIL,AuthPage.VERIFY_RESET,AuthPage.RESET_PASSWORD,AuthPage.LINK_GOOGLE)) { viewModel.showLogin() }
     BackHandler(enabled = state.page == AuthPage.ONBOARDING) { viewModel.skipOnboarding() }
@@ -54,7 +59,8 @@ fun RegisterScreen(viewModel: RegisterViewModel, modifier: Modifier = Modifier) 
         onForgot = viewModel::showForgot,onResend = viewModel::resend,onContinue = viewModel::continueAfterRegistration,
         onProfileEdit = viewModel::editProfile, onProfileSelect = viewModel::selectProfileReference,
         onProfileSave = viewModel::saveProfile, onProfileReload = viewModel::loadProfile,
-        onProfileReferences = viewModel::retryProfileReferences, onProfileDialog = viewModel::profileDialog)
+        onProfileReferences = viewModel::retryProfileReferences, onProfileDialog = viewModel::profileDialog,
+        plans = plans, onPlanAction = viewModel.plans::onAction)
 }
 
 @Composable
@@ -83,6 +89,8 @@ fun AuthContent(
     onProfileReload: () -> Unit = {},
     onProfileReferences: () -> Unit = {},
     onProfileDialog: (String) -> Unit = {},
+    plans: PlanUiState = PlanUiState(),
+    onPlanAction: (PlanAction) -> Unit = {},
 ) {
     if (state.page == AuthPage.ONBOARDING) {
         ShoppingProfileContent(state.profile, onProfileEdit, onProfileSelect, onProfileSave, onSkip,
@@ -90,6 +98,10 @@ fun AuthContent(
         return
     }
     if (state.page == AuthPage.HOME_ENTRY) {
+        if (plans.step != PlanStep.CLOSED) {
+            PlanContent(plans, onPlanAction, modifier)
+            return
+        }
         key(state.account?.userId) {
             HomeContent(
                 email = state.account?.email.orEmpty(),
@@ -99,6 +111,7 @@ fun AuthContent(
                 onSessions = onSessions,
                 onLogout = { onLogout(false) },
                 modifier = modifier,
+                plans = plans, onPlanAction = onPlanAction,
             )
         }
         return

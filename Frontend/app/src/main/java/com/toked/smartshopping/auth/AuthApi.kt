@@ -11,6 +11,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
+import com.toked.smartshopping.shopping.*
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -47,6 +48,12 @@ sealed class AuthFailure : Exception() {
 }
 
 interface AuthGateway {
+    suspend fun planReferences(accessToken: String, kind: String, cursor: String?): PlanReferencePage = throw AuthFailure.Unconfigured()
+    suspend fun planStores(accessToken: String, retailerId: String?, query: String, cursor: String?): PlanStorePage = throw AuthFailure.Unconfigured()
+    suspend fun planStore(accessToken: String, id: String): PlanStore = throw AuthFailure.Unconfigured()
+    suspend fun plans(accessToken: String, cursor: String?): PlanPage = throw AuthFailure.Unconfigured()
+    suspend fun plan(accessToken: String, id: String): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun savePlan(accessToken: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
     suspend fun shoppingProfile(accessToken: String): ShoppingProfile = throw AuthFailure.Unconfigured()
     suspend fun saveShoppingProfile(accessToken: String, patch: ProfilePatch): ShoppingProfile = throw AuthFailure.Unconfigured()
     suspend fun references(accessToken: String, kind: String, cursor: String? = null): ReferencePage = throw AuthFailure.Unconfigured()
@@ -191,6 +198,23 @@ class AuthApi(baseUrl: String, allowLocalHttp: Boolean = false) : AuthGateway {
             } }, if (data.isNull("next_cursor")) null else data.getString("next_cursor"))
         } catch (_: org.json.JSONException) { throw AuthFailure.InvalidResponse() }
     }
+
+    override suspend fun planReferences(accessToken: String, kind: String, cursor: String?): PlanReferencePage {
+        require(kind in setOf("retailers", "categories", "brands"))
+        return PlanDecoders.references(request(kind, accessToken = accessToken, query = mapOf("limit" to "20", "cursor" to cursor)))
+    }
+    override suspend fun planStores(accessToken: String, retailerId: String?, query: String, cursor: String?): PlanStorePage =
+        PlanDecoders.stores(request("map/stores", accessToken = accessToken, query = mapOf("bbox" to "-180,-90,180,90",
+            "retailer_ids" to retailerId, "q" to query.takeIf { it.isNotBlank() }, "cursor" to cursor, "limit" to "20")))
+    override suspend fun planStore(accessToken: String, id: String): PlanStore =
+        PlanDecoders.store(request("stores", accessToken = accessToken, segment = id))
+    override suspend fun plans(accessToken: String, cursor: String?): PlanPage =
+        PlanDecoders.page(request("plans", accessToken = accessToken, query = mapOf("limit" to "20", "cursor" to cursor)))
+    override suspend fun plan(accessToken: String, id: String): ShoppingPlanView =
+        PlanDecoders.view(request("plans", accessToken = accessToken, segment = id))
+    override suspend fun savePlan(accessToken: String, mutation: PlanMutation): ShoppingPlanView = PlanDecoders.view(
+        request("plans", if (mutation.planId == null) "POST" else "PATCH", mutation.body, accessToken,
+            expected = if (mutation.planId == null) 201 else 200, segment = mutation.planId, idempotencyKey = mutation.key))
 
     private suspend fun request(path: String, method: String = "GET", body: String? = null,
         accessToken: String? = null, expected: Int = 200, cursor: String? = null, segment: String? = null,

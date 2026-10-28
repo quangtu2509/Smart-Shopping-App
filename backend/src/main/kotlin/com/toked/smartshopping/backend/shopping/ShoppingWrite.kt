@@ -71,6 +71,34 @@ class ShoppingWrite internal constructor(c: Connection, owner: UUID, private val
         audit(id, "DRAFT_CREATED", 1)
         return plan(id)
     }
+    /** All edited inputs, invalidation and the one version advance commit atomically. */
+    fun updatePlan(id: UUID, expected: Int, budget: String?, newSelections: List<Selection>?, categoryIds: List<String>?): PlanView {
+        val p = row(id); expect(p, expected); editable(p)
+        val nextBudget = budget?.let { money.amount(it, p.currency, "budget", positive = true) } ?: p.budget.toBigDecimal()
+        val oldSelections = selections(id)
+        val oldCategories = categories(id)
+        val nextSelections = newSelections?.let { validateSelections(it, p.maxStores) } ?: oldSelections
+        categoryIds?.let(::validateCategories)
+        val nextCategories = categoryIds?.sorted() ?: oldCategories
+        val contextChanged = nextSelections != oldSelections || nextCategories != oldCategories
+        if (!contextChanged && nextBudget.compareTo(p.budget.toBigDecimal()) == 0) return plan(id)
+        execute(c, "UPDATE shopping_plans SET budget=? WHERE id=?", nextBudget, id)
+        if (contextChanged) {
+            execute(c, "DELETE FROM shopping_plan_selections WHERE plan_id=?", id)
+            nextSelections.forEachIndexed { index, selection -> execute(c,
+                "INSERT INTO shopping_plan_selections(plan_id,position,retailer_id,store_id) VALUES (?,?,?,?)",
+                id, index, selection.retailer_id, selection.store_id) }
+            execute(c, "DELETE FROM shopping_plan_categories WHERE plan_id=?", id)
+            nextCategories.forEach { execute(c, "INSERT INTO shopping_plan_categories(plan_id,category_id) VALUES (?,?)", id, it) }
+            execute(c, "UPDATE shopping_plans SET catalog_status='FAILED' WHERE id=?", id)
+        }
+        val hasItems = records(id, p.currency).isNotEmpty()
+        val nextStatus = if (contextChanged) { if (hasItems) PlanStatus.BUILDING_LIST else PlanStatus.DRAFT } else p.status
+        advance(p, nextStatus, "PLAN_INPUTS_CHANGED")
+        val result = plan(id)
+        return if (contextChanged) result.copy(warnings = result.warnings + ShoppingWarning("PLAN_CONTEXT_CHANGED",
+            "Nơi mua hoặc nhóm hàng đã đổi. Cần tải lại catalog và kiểm tra các món đã chọn.", result.items.map { it.id })) else result
+    }
     /** Catalog adapters will call this after their I/O has finished, never from inside a provider transaction. */
     fun catalogState(id: UUID, expected: Int, state: CatalogStatus): PlanView {
         val p = row(id); expect(p, expected)

@@ -25,6 +25,8 @@ Debug chỉ cho HTTP tới 127.0.0.1/localhost/10.0.2.2; release cấm cleartext
 
 ## Giao diện theo Stitch
 
+PLAN-01 có ba bước Ngân sách → Nơi mua → Nhóm hàng theo Stitch, lưu/mở lại/sửa Draft từ Home, phân biệt chuỗi/chi nhánh và giữ input khi xoay màn hình. Xem [hướng dẫn và ảnh PLAN-01](docs/plan/README.md). Backend cần restart để nhận API mới; dữ liệu provider và catalog sản phẩm chưa được nối. Lần này kiểm chứng trên Pixel 9a theo yêu cầu, không cài điện thoại.
+
 Màn đăng ký dùng [thiết kế Tạo tài khoản đã lưu](../../stitch-audit/b86d05bbf8884a5e9fc5ef7730c78e75.html): logo gốc, xanh lá, Inter/Plus Jakarta Sans, thẻ form bo góc và icon trong ô nhập. Asset nằm trong app nên không cần tải mạng khi mở màn hình; giấy phép font nằm trong [licenses/](licenses/). Theme mặc định giữ màu thương hiệu, hỗ trợ sáng/tối và cuộn khi chữ lớn hoặc bàn phím mở.
 
 Đăng ký Gmail và reset dùng mật khẩu 10–128 ký tự với hoa/thường/ký tự đặc biệt, có nút hiện/ẩn riêng. Google có ở hai form, xác minh qua backend; email trùng yêu cầu mật khẩu cũ trước khi liên kết. Badge chỉ mô tả mã hóa phiên trên thiết bị; kết nối HTTP debug local vẫn theo cấu hình ở trên. Xác minh xong tự lưu phiên, hiển thị thành công rồi Tiếp tục đến onboarding.

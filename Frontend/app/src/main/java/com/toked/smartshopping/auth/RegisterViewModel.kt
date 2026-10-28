@@ -39,6 +39,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
     private var initialized = false
     private var pendingSession: AuthSession? = null
     private val repository = AuthSessionRepository(api, store)
+    val plans = com.toked.smartshopping.shopping.PlanController(repository, viewModelScope) { expired() }
     private var restoreInFlight = false
     private var countdown: Job? = null
     private var pendingLogout: Boolean? = null
@@ -440,6 +441,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
 
     fun logout(all: Boolean = false) {
         if (state.value.sending) return
+        plans.clear()
         eventsChannel.trySend(AuthUiEvent.ClearGoogle)
         resetToken = null
         resendCountdown?.cancel()
@@ -460,6 +462,7 @@ class RegisterViewModel(private val api: AuthGateway, private val store: Session
     }
 
     private fun expired(message: String = "Phiên đăng nhập đã hết hạn hoặc bị thu hồi. Vui lòng đăng nhập lại.") {
+        plans.clear()
         pendingSession = null
         mutableState.value = RegisterUiState(page = AuthPage.LOGIN_ENTRY, message = message)
     }

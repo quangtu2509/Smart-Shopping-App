@@ -2,6 +2,8 @@
 
 Ktor + PostgreSQL 18, JDBC/HikariCP và Flyway. Backend là Gradle project riêng, Android giữ compile/target SDK 36. JDK daemon/toolchain 25, Java/Kotlin bytecode target 17. Migration nằm ở `src/main/resources/db/migration/`; Flyway tự áp dụng khi backend khởi động. Không tạo bảng thủ công bằng pgAdmin.
 
+PLAN-01 đã có API Draft create/list/get/patch, retailer reference và đọc Store nội bộ phục vụ chọn chi nhánh. Xem [PLAN_API](PLAN_API.md) và [giao diện Android](../Frontend/docs/plan/README.md). Dùng lại schema V5; catalog/provider/GPS/nearest-store vẫn thuộc task sau. Backend development đang chạy bản cũ cần khởi động lại để nạp API mới.
+
 AUTH-01/02 đã có OTP Gmail, Google/link và password recovery trong API-AUTH-01–16; người dùng xác nhận hoàn tất ngày 19/10/2026. Xem [phạm vi và bằng chứng AUTH](../Frontend/docs/auth/README.md) để phân biệt test tự động với xác nhận thực tế, cùng tác động migration V3 lên phiên cũ.
 
 Gốc repository Git là `Smart Shopping App/`, chỉ có hai project `Frontend/` và `backend/` cùng metadata Git. Workspace root là thư mục cha `Smart Shopping/`, chứa `.agents/`, `docs/`, `plans/` và `tests/` bên ngoài repository. Các lệnh ghi workspace root chạy từ thư mục cha này. Build/chạy backend bằng wrapper trong `backend/`; khi deploy, chọn thư mục này làm project build. Hosting/production chưa được cấu hình.

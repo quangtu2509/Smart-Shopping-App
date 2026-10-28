@@ -39,6 +39,7 @@ tasks.test {
     inputs.file("../Frontend/app/src/test/resources/shopping/plan-view.json")
     inputs.file("postman/auth00.postman_collection.json")
     inputs.file("postman/profile01.postman_collection.json")
+    inputs.file("postman/plan01.postman_collection.json")
     inputs.dir("src/test/javascript")
     inputs.file("scripts/run-local.ps1")
     inputs.dir("src/test/powershell")

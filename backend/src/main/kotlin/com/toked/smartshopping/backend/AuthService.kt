@@ -15,6 +15,7 @@ class AuthService(
     private val policy: AuthPolicy = AuthPolicy(),
 ) {
     fun shoppingProfiles() = ShoppingProfiles(db, this)
+    fun shoppingPlans() = com.toked.smartshopping.backend.shopping.ShoppingPlans(db, this)
     internal fun authenticatedOwner(connection: Connection, access: String): UUID = authenticate(connection, access).user.id
     private val dummyHash = security.passwordHash("Dummy password for timing only")
     private data class Account(val id: UUID, val email: String, val hash: String?, val verified: Boolean, val locked: Boolean, val temporaryLockUntil: Instant?)

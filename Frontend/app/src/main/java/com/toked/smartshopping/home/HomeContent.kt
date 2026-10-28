@@ -26,6 +26,9 @@ import androidx.compose.ui.unit.sp
 import com.toked.smartshopping.ui.theme.SmartShoppingTheme
 import com.toked.smartshopping.ui.theme.ShoppingGreen
 import com.toked.smartshopping.ui.theme.ShoppingGreenContainer
+import com.toked.smartshopping.shopping.PlanUiState
+import com.toked.smartshopping.shopping.PlanAction
+import com.toked.smartshopping.shopping.PlanHomeCards
 
 /** UI-only destinations until their business features are connected. No sample shopping data. */
 private enum class HomeTab(val label: String, val symbol: HomeSymbol) {
@@ -43,6 +46,8 @@ fun HomeContent(
     onSessions: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
+    plans: PlanUiState = PlanUiState(),
+    onPlanAction: (PlanAction) -> Unit = {},
 ) {
     var tab by rememberSaveable(email) { mutableStateOf(HomeTab.HOME) }
     var query by rememberSaveable(email) { mutableStateOf("") }
@@ -103,13 +108,11 @@ fun HomeContent(
                             ),
                         )
                         if (query.isNotBlank()) {
-                            EmptyHomeCard(HomeSymbol.SEARCH, "Không tìm thấy kết quả",
-                                "Chưa có kế hoạch hoặc mẫu đã lưu phù hợp với “${query.trim()}”.")
+                            PlanHomeCards(plans, onPlanAction, query = query.trim())
                         } else {
-                            PlanningHero { notice = "Tạo kế hoạch mua sắm sẽ có khi tính năng lập kế hoạch được kết nối." }
-                            HomeSection("Kế hoạch đang thực hiện") {
-                                EmptyHomeCard(HomeSymbol.CART, "Chưa có kế hoạch mua sắm.",
-                                    "Bắt đầu một kế hoạch để sắp xếp danh sách và kiểm soát ngân sách của bạn.")
+                            PlanningHero { onPlanAction(PlanAction.New) }
+                            HomeSection("Kế hoạch của bạn") {
+                                PlanHomeCards(plans, onPlanAction)
                             }
                             HomeSection("Giá tốt hôm nay") {
                                 EmptyHomeCard(HomeSymbol.STORE, "Chưa có thông tin giá",

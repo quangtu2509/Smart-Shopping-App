@@ -1,0 +1,685 @@
+{
+  "info": {
+    "name": "PLAN-01 Draft and selection contract",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Retailer references",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          }
+        ],
+        "url": "{{base_url}}/retailers?q=C%E1%BB%ADa%20h%C3%A0ng%20th%E1%BB%AD%20nghi%E1%BB%87m&limit=1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Paged references\",()=>{pm.expect(b.data.items).to.have.length(1);pm.expect(b.data.next_cursor).to.be.a(\"string\");});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Category references",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          }
+        ],
+        "url": "{{base_url}}/categories?q=Th%E1%BB%B1c%20ph%E1%BA%A9m"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Real reference\",()=>pm.expect(b.data.items.some(x=>x.id===\"plan-food\")).to.equal(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Optional branch lookup",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          }
+        ],
+        "url": "{{base_url}}/map/stores?bbox=105,9,107,11&retailer_ids=plan-retailer-a"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Internal coverage explicit\",()=>{pm.expect(b.data.map.status).to.equal(\"PARTIAL\");pm.expect(b.data.map.warnings[0].code).to.equal(\"PLACES_NOT_CONNECTED\");});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invalid budget",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "invalid-budget"
+          }
+        ],
+        "url": "{{base_url}}/plans",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"budget\": \"0\", \"currency\": \"VND\", \"selections\": [{\"retailer_id\": \"plan-retailer-a\", \"store_id\": null}], \"category_ids\": [\"plan-food\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 422\",()=>pm.response.to.have.status(422));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Field error\",()=>pm.expect(b.error.field_errors[0].field).to.equal(\"budget\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Missing mutation key",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"budget\": \"500000\", \"currency\": \"VND\", \"selections\": [{\"retailer_id\": \"plan-retailer-a\", \"store_id\": null}], \"category_ids\": [\"plan-food\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 400\",()=>pm.response.to.have.status(400));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Key required\",()=>pm.expect(b.error.code).to.equal(\"IDEMPOTENCY_KEY_REQUIRED\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Save Draft",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{create_key}}"
+          }
+        ],
+        "url": "{{base_url}}/plans",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"budget\": \"500000\", \"currency\": \"VND\", \"selections\": [{\"retailer_id\": \"plan-retailer-a\", \"store_id\": null}], \"category_ids\": [\"plan-food\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.collectionVariables.set(\"plan_id\",b.data.plan.id);",
+              "pm.test(\"Draft persisted\",()=>{pm.expect(b.data.plan.version).to.equal(1);pm.expect(b.data.plan.revision).to.equal(0);pm.expect(b.data.plan.status).to.equal(\"DRAFT\");pm.expect(b.data.items).to.have.length(0);pm.expect(pm.response.headers.get(\"Location\")).to.equal(\"/api/v1/plans/\"+b.data.plan.id);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Replay create",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{create_key}}"
+          }
+        ],
+        "url": "{{base_url}}/plans",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"budget\": \"500000\", \"currency\": \"VND\", \"selections\": [{\"retailer_id\": \"plan-retailer-a\", \"store_id\": null}], \"category_ids\": [\"plan-food\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\",()=>pm.response.to.have.status(201));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Same resource\",()=>pm.expect(b.data.plan.id).to.equal(pm.collectionVariables.get(\"plan_id\")));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read Draft",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Owner and inputs\",()=>{pm.expect(b.data.plan.budget).to.equal(\"500000\");pm.expect(b.data.plan.selections[0].retailer_id).to.equal(\"plan-retailer-a\");});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Other owner cannot read",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{other_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 404\",()=>pm.response.to.have.status(404));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Private ID hidden\",()=>pm.expect(b.error.code).to.equal(\"RESOURCE_NOT_FOUND\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List owner drafts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          }
+        ],
+        "url": "{{base_url}}/plans?status=DRAFT&limit=100"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Saved Draft listed\",()=>pm.expect(b.data.items.some(x=>x.id===pm.collectionVariables.get(\"plan_id\"))).to.equal(true));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Edit budget",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{patch_key}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\": 1, \"budget\": \"750000\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"One version increment\",()=>{pm.expect(b.data.plan.version).to.equal(2);pm.expect(b.data.plan.budget).to.equal(\"750000\");});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Replay edit before version check",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{patch_key}}"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\": 1, \"budget\": \"750000\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"No duplicate edit\",()=>pm.expect(b.data.plan.version).to.equal(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Version conflict",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "conflicting-edit"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\": 1, \"budget\": \"800000\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 409\",()=>pm.response.to.have.status(409));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Conflict context\",()=>{pm.expect(b.error.code).to.equal(\"VERSION_CONFLICT\");pm.expect(b.error.details.current_version).to.equal(2);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Change category",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "change-context"
+          }
+        ],
+        "url": "{{base_url}}/plans/{{plan_id}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"expected_version\": 2, \"category_ids\": [\"plan-home\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Invalidation and warning\",()=>{pm.expect(b.data.plan.version).to.equal(3);pm.expect(b.data.plan.catalog_status).to.equal(\"FAILED\");pm.expect(b.data.warnings.some(x=>x.code===\"PLAN_CONTEXT_CHANGED\")).to.equal(true);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reject reused key with different payload",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "{{create_key}}"
+          }
+        ],
+        "url": "{{base_url}}/plans",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"budget\": \"600000\", \"currency\": \"VND\", \"selections\": [{\"retailer_id\": \"plan-retailer-a\", \"store_id\": null}], \"category_ids\": [\"plan-food\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 409\",()=>pm.response.to.have.status(409));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Key misuse rejected\",()=>pm.expect(b.error.code).to.equal(\"IDEMPOTENCY_KEY_REUSED\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read public branch",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{plan_token}}"
+          }
+        ],
+        "url": "{{base_url}}/stores/plan-branch-a"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\",()=>pm.response.to.have.status(200));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Public read only\",()=>{pm.expect(b.data.visibility).to.equal(\"PUBLIC\");pm.expect(b.data.can_edit).to.equal(false);});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Private branch stays private",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{other_token}}"
+          }
+        ],
+        "url": "{{base_url}}/stores/plan-private-{{owner_id}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 404\",()=>pm.response.to.have.status(404));",
+              "const b=pm.response.json();",
+              "pm.test(\"Request ID\",()=>pm.expect(b.meta.request_id).to.be.a(\"string\"));",
+              "pm.test(\"Private store hidden\",()=>pm.expect(b.error.code).to.equal(\"RESOURCE_NOT_FOUND\"));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

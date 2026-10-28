@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
 import com.toked.smartshopping.auth.*
+import com.toked.smartshopping.shopping.PlanAction
 import com.toked.smartshopping.ui.theme.SmartShoppingTheme
 import org.junit.Assert.*
 import org.junit.Rule
@@ -27,18 +28,18 @@ class HomeUiTest {
     }
 
     @Test fun emptyHomeSearchAndCreateNeverInventPlansOrPrices() {
+        var creates = 0
         compose.setContent { SmartShoppingTheme(darkTheme = false) {
-            HomeContent("owner@example.com", 3, "Cân bằng", {}, {}, {})
+            HomeContent("owner@example.com", 3, "Cân bằng", {}, {}, {}, onPlanAction = { if (it == PlanAction.New) creates++ })
         } }
         compose.onNodeWithText("Tạo kế hoạch mua sắm").assertIsDisplayed()
-        compose.onNodeWithText("Chưa có kế hoạch mua sắm.").assertExists()
+        compose.onNodeWithText("Chưa có kế hoạch mua sắm.", substring = true).assertExists()
         compose.onNodeWithText("500.000₫").assertDoesNotExist()
         picture("home-light.png")
         compose.onNodeWithText("Bắt đầu ngay").performClick()
-        compose.onNodeWithText("Tạo kế hoạch mua sắm sẽ có khi tính năng lập kế hoạch được kết nối.").assertIsDisplayed()
-        compose.onNodeWithText("Đã hiểu").performClick()
+        assertEquals(1, creates)
         compose.onNodeWithText("Tìm kế hoạch, mẫu…").performTextInput("cuối tuần")
-        compose.onNodeWithText("Không tìm thấy kết quả").assertIsDisplayed()
+        compose.onNodeWithText("Không có kế hoạch phù hợp với tìm kiếm.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Xóa tìm kiếm").performClick()
         compose.onNodeWithText("Tạo kế hoạch mua sắm").assertIsDisplayed()
         compose.onNodeWithText("Mẫu thường dùng").performScrollTo().assertIsDisplayed()
