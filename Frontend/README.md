@@ -27,9 +27,9 @@ Debug chỉ cho HTTP tới 127.0.0.1/localhost/10.0.2.2; release cấm cleartext
 
 ## Giao diện theo Stitch
 
-PLAN-01 có ba bước Ngân sách → Nơi mua → Nhóm hàng theo Stitch, lưu/mở lại/sửa Draft từ Home, phân biệt chuỗi/chi nhánh và giữ input khi xoay màn hình. Xem [hướng dẫn và ảnh PLAN-01](docs/plan/README.md). Backend cần restart để nhận API mới; dữ liệu provider và catalog sản phẩm chưa được nối. Lần này kiểm chứng trên Pixel 9a theo yêu cầu, không cài điện thoại.
+PLAN-01 có ba bước Ngân sách → Nơi mua → Nhóm hàng theo Stitch, lưu/mở lại/sửa Plan từ Home, phân biệt chuỗi/chi nhánh và giữ input khi xoay màn hình. Xem [hướng dẫn PLAN-01](docs/plan/README.md). Sau lưu, app mở catalog qua CATALOG-01; backend cần có dữ liệu đồng bộ và đang chạy bản mới.
 
-SC-01/02 và các bước auth đã đối chiếu lại trực tiếp với bảy màn Stitch: CTA đăng nhập trước Google, CTA đăng ký trong thẻ khi đủ chỗ, OTP/reset dùng thẻ và hai UI thành công riêng. Khung ngắn/IME/chữ lớn chuyển CTA vào footer; form vẫn cuộn. Xem [thiết kế gốc, ảnh Pixel9a và kiểm chứng](docs/auth-layout/README.md).
+SC-01/02 và các bước auth đã đối chiếu lại trực tiếp với bảy màn Stitch: CTA đăng nhập trước Google, CTA đăng ký trong thẻ khi đủ chỗ, OTP/reset dùng thẻ và hai UI thành công riêng. Khung ngắn/IME/chữ lớn chuyển CTA vào footer; form vẫn cuộn. Xem [bố cục và kiểm thử auth](docs/auth-layout/README.md). Bản xuất thiết kế và ảnh kiểm chứng được giữ cục bộ, không theo dõi trong Git.
 
 Màn đăng ký dùng [thiết kế Tạo tài khoản đã lưu](../../stitch-audit/b86d05bbf8884a5e9fc5ef7730c78e75.html): logo gốc, xanh lá, Inter/Plus Jakarta Sans, thẻ form bo góc và icon trong ô nhập. Asset nằm trong app nên không cần tải mạng khi mở màn hình; giấy phép font nằm trong [licenses/](licenses/). Theme mặc định giữ màu thương hiệu, hỗ trợ sáng/tối và cuộn khi chữ lớn hoặc bàn phím mở.
 

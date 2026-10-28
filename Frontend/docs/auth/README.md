@@ -1,6 +1,6 @@
 # AUTH-01/02 — phạm vi và bằng chứng
 
-Ứng dụng có đăng ký Gmail qua OTP, đăng nhập mật khẩu/Google, liên kết Google với tài khoản hiện có, quên mật khẩu và quản lý phiên. Các màn hình dùng thiết kế Stitch đã lưu của dự án. Phạm vi yêu cầu: US/UC/FR-01–02; API-AUTH-01–16 dưới `/api/v1`. Profile chỉ có default/onboarding entry; chỉnh hồ sơ và Home nghiệp vụ thuộc task tiếp theo.
+Ứng dụng có đăng ký Gmail qua OTP, đăng nhập mật khẩu/Google, liên kết Google với tài khoản hiện có, quên mật khẩu và quản lý phiên. Các màn hình dùng thiết kế Stitch đã lưu của dự án. Phạm vi yêu cầu: US/UC/FR-01–02; API-AUTH-01–16 dưới `/api/v1`. Chỉnh hồ sơ đã được nối trong [PROFILE-01](../profile/README.md); Plan và catalog có hướng dẫn riêng trong Frontend.
 
 ## Hành vi và tương thích
 
@@ -31,14 +31,6 @@
 | Nghiệm thu thực tế, 19/10/2026 | Người dùng xác nhận tổng thể AUTH hoàn tất sau khi tự cấu hình/chạy/test local |
 
 Các số device ở hai mốc là những lượt kiểm tra khác nhau, không phải một full suite 24 tests. Backend tự động dùng fake mail/Google identity; verifier có test RSA/certificate giả lập. Agent không tự dùng Gmail/Google thật hoặc đọc mật khẩu ứng dụng; xác nhận của người dùng không thay cho log từng kịch bản thật. Không reset database development, không gửi thư hàng loạt.
-
-## Ảnh giao diện
-
-Ảnh từ UI fixture, có mã/email giả lập; không phải tài khoản hoặc OTP thật.
-
-| Đăng nhập | Xác minh email | Thành công |
-|---|---|---|
-| ![Đăng nhập](login.png) | ![OTP fixture](otp.png) | ![Thành công fixture](success.png) |
 
 ## Chạy local và giới hạn
 

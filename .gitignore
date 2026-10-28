@@ -46,6 +46,13 @@ key.properties
 /artifacts/
 /.agent-output/
 
+# Local design exports and UI evidence are not needed to build, run or test the app.
+# Keep runtime assets under app/src/main/res and test fixtures under app/src/test.
+/Frontend/docs/**/design/
+/Frontend/docs/**/evidence/
+/Frontend/docs/auth/*.png
+/Frontend/scripts/capture-catalog-evidence.ps1
+
 # Operating-system and editor files
 .DS_Store
 Thumbs.db
