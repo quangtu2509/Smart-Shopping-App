@@ -31,6 +31,50 @@ internal class CatalogFlowDecoder {
         return ProviderPage(unique, total, query.page, query.limit, rejected, warnings)
     }
 
+    private fun root(body: String): JsonObject = try {
+        json.parseToJsonElement(body) as? JsonObject ?: invalid()
+    } catch (_: SerializationException) { invalid() } catch (_: IllegalArgumentException) { invalid() }
+    private fun requiredText(root: JsonObject, key: String): String =
+        text(root[key])?.takeIf { it.isNotBlank() && it.length <= 512 } ?: invalid()
+
+    fun snapshot(body: String): ProviderSnapshot {
+        val root = root(body)
+        val raw = root["items"] as? JsonArray ?: invalid()
+        if (raw.size > 100) invalid()
+        val items = raw.mapNotNull { (it as? JsonObject)?.let(::product) }
+        return ProviderSnapshot(requiredText(root,"dataset_id"), items,
+            integer(root["after"])?.takeIf { it >= 0 } ?: invalid(), boolean(root["has_more"]) ?: invalid(),
+            requiredText(root,"baseline"), requiredText(root,"next_cursor"), raw.size-items.size)
+    }
+
+    fun changes(body: String): ProviderChanges {
+        val root = root(body)
+        val raw = root["items"] as? JsonArray ?: invalid()
+        if (raw.size > 100) invalid()
+        var rejected = 0
+        val items = raw.map { element ->
+            val event = element as? JsonObject ?: invalid()
+            val id = identifier(event["id"]) ?: invalid()
+            when (val operation = text(event["operation"])) {
+                "delete" -> ProviderChange(id,operation,null)
+                "observed" -> {
+                    val obj=event["observation"] as? JsonObject ?: invalid()
+                    ProviderChange(id,operation,null,ProviderObservation(identifier(obj["source_id"]) ?: invalid(),decimal(obj["observed_at"]) ?: invalid()))
+                }
+                "upsert" -> {
+                    val obj = event["product"] as? JsonObject ?: invalid()
+                    if (identifier(obj["id"]) != id) invalid()
+                    val item = product(obj)
+                    if (item == null) rejected++
+                    ProviderChange(id,operation,item)
+                }
+                else -> invalid()
+            }
+        }
+        return ProviderChanges(requiredText(root,"dataset_id"),items,requiredText(root,"next_cursor"),
+            boolean(root["has_more"]) ?: invalid(),rejected)
+    }
+
     private fun product(obj: JsonObject): ProviderProduct? {
         val id = identifier(obj["id"]) ?: return null
         val name = text(obj["name"])?.takeIf { it.isNotBlank() } ?: return null
@@ -63,7 +107,8 @@ internal class CatalogFlowDecoder {
             images, text(obj["brand"]), text(obj["sku"]), text(obj["unit"]), text(obj["quantity_label"]), currency, price,
             amount("api_price"), amount("original_price"), amount("sale_price"), options, (obj["variants"] as? JsonArray)?.size ?: 0,
             text(obj["availability"]), observed, decimal(obj["last_updated_at"]), decimal(obj["last_success_at"]), stale,
-            categories, (obj["stores"] as? JsonArray)?.isNotEmpty() == true, warnings.distinct())
+            categories, (obj["stores"] as? JsonArray)?.isNotEmpty() == true, warnings.distinct(),
+            (obj["source_ids"] as? JsonArray).orEmpty().mapNotNull(::identifier).distinct().take(1000))
     }
 
     private fun integer(value: JsonElement?): Long? = (value as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull

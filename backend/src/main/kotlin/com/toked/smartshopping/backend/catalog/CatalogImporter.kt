@@ -6,6 +6,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Clock
+import java.time.Instant
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 class CatalogImporter(private val db: Database, private val provider: CatalogProvider?, private val clock: Clock = Clock.systemUTC()) {
     private val normalizer = CatalogNormalizer(clock)
@@ -15,11 +18,28 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
     suspend fun sync(site: String? = null, maxPages: Int = 200): CatalogSyncResult {
         require(maxPages in 1..1000)
         val source = provider ?: throw ProviderFailure(ProviderFailureCode.UNCONFIGURED)
+        val progress = if (site == null && source is IncrementalCatalogProvider) withContext(Dispatchers.IO) {
+            db.transaction { c -> query(c,"SELECT dataset,cursor FROM catalog_sync_state WHERE provider='catalogflow'").use { s ->
+                s.executeQuery().use { r -> if (r.next()) CatalogProgress(r.getString(1),r.getString(2)) else null }
+            } }
+        } else null
+        val delta = if (site == null && source is IncrementalCatalogProvider) CatalogDeltaSync.fetch(source,progress,maxPages) else null
+        val sourceIdsById=delta?.products?.associate { it.id to it.sourceIds }.orEmpty()
+        val recordsByUpstream=linkedMapOf<String,CatalogRecord>()
         val records = linkedMapOf<String, CatalogRecord>()
         val knownSites=linkedSetOf<String>()
         var received = 0; var rejected = 0; var partial = false; var done = false
         var firstTotal: Long? = null
-        for (pageNumber in 1..maxPages) {
+        if (delta != null) {
+            received=delta.products.size+delta.deleted.size+delta.rejected;rejected=delta.rejected;done=true
+            partial=delta.rejected>0
+            for (item in delta.products) {
+                knownSites+=item.website
+                val record=normalizer.normalize(item)
+                if (record==null) { rejected++;partial=true }
+                else { records[record.offer.ref.id]=record;recordsByUpstream[item.id]=record }
+            }
+        } else for (pageNumber in 1..maxPages) {
             val page = source.products(CatalogQuery(page = pageNumber, limit = 100, site = site))
             if (firstTotal == null) firstTotal = page.total
             if (firstTotal != page.total) partial = true
@@ -42,8 +62,22 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
         withContext(Dispatchers.IO) { db.transaction { c ->
             // Serialize cache writers only during commit, never while fetching a retailer.
             query(c, "SELECT version FROM catalog_cache_version WHERE id=1 FOR UPDATE").use { s -> s.executeQuery().close() }
-            if (!partial) {
-                if (site == null) execute(c, "UPDATE catalog_entries SET active=FALSE")
+            if (delta != null) {
+                val actual=query(c,"SELECT dataset,cursor FROM catalog_sync_state WHERE provider='catalogflow'").use { s ->
+                    s.executeQuery().use { r -> if (r.next()) CatalogProgress(r.getString(1),r.getString(2)) else null }
+                }
+                if (actual!=delta.previous) throw ProviderFailure(ProviderFailureCode.UNAVAILABLE,retryable=true)
+                if (delta.reset) {
+                    execute(c,"UPDATE catalog_entries SET active=FALSE WHERE retailer_id IN (SELECT id FROM shopping_retailers WHERE code='CATALOGFLOW')")
+                    execute(c,"DELETE FROM catalog_provider_entries WHERE provider='catalogflow'")
+                }
+                for (id in delta.deleted) {
+                    execute(c,"UPDATE catalog_entries SET active=FALSE WHERE offer_id IN (SELECT offer_id FROM catalog_provider_entries WHERE provider='catalogflow' AND upstream_id=?)",id)
+                    execute(c,"DELETE FROM catalog_provider_entries WHERE provider='catalogflow' AND upstream_id=?",id)
+                }
+            }
+            if (delta == null && !partial) {
+                if (site == null) execute(c, "UPDATE catalog_entries SET active=FALSE WHERE retailer_id IN (SELECT id FROM shopping_retailers WHERE code='CATALOGFLOW')")
                 else execute(c, "UPDATE catalog_entries SET active=FALSE WHERE retailer_id=?", CatalogNormalizer.retailerId(site))
             }
             for ((website, values) in groups) {
@@ -63,6 +97,26 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
                     offer.ref.id, product.id, offer.retailer_id, json.encodeToString(offer))
                 execute(c, "INSERT INTO catalog_entries(offer_id,retailer_id,category_ids,active,fetched_at) VALUES (?,?,?,TRUE,?) ON CONFLICT(offer_id) DO UPDATE SET category_ids=EXCLUDED.category_ids,active=TRUE,fetched_at=EXCLUDED.fetched_at",
                     offer.ref.id, record.retailer.id, c.createArrayOf("text", record.categories.map { it.id }.toTypedArray()), now)
+            }
+            if (delta != null) {
+                for ((id,record) in recordsByUpstream) execute(c,
+                    "INSERT INTO catalog_provider_entries(provider,upstream_id,offer_id,source_ids) VALUES ('catalogflow',?,?,?) ON CONFLICT(provider,upstream_id) DO UPDATE SET offer_id=EXCLUDED.offer_id,source_ids=EXCLUDED.source_ids",id,record.offer.ref.id,c.createArrayOf("text",sourceIdsById[id].orEmpty().toTypedArray()))
+                for (observation in delta.observations) {
+                    val seconds=try { observation.observedAt.setScale(0,RoundingMode.DOWN).longValueExact() }
+                        catch (_: Exception) { throw ProviderFailure(ProviderFailureCode.INVALID_RESPONSE) }
+                    val instant=try { Instant.ofEpochSecond(seconds) } catch (_: Exception) { throw ProviderFailure(ProviderFailureCode.INVALID_RESPONSE) }
+                    if (instant<Instant.parse("2000-01-01T00:00:00Z") || instant>now.plusSeconds(300)) throw ProviderFailure(ProviderFailureCode.INVALID_RESPONSE)
+                    val freshness=if (instant<now.minusSeconds(86400)) "STALE" else "FRESH"
+                    execute(c,"""UPDATE shopping_offers SET payload=jsonb_set(jsonb_set(jsonb_set(payload,
+                        '{observed_at}',to_jsonb(?::text)),'{freshness}',to_jsonb(?::text)),
+                        '{version}',to_jsonb(('cf_observation_'||md5(id||?))::text))
+                        WHERE kind='CATALOG' AND id IN (SELECT offer_id FROM catalog_provider_entries
+                        WHERE provider='catalogflow' AND ?=ANY(source_ids))
+                        AND coalesce((payload->>'observed_at')::timestamptz,'epoch'::timestamptz)<=?::timestamptz""",
+                        instant.toString(),freshness,instant.toString(),observation.sourceId,instant.toString())
+                    execute(c,"UPDATE catalog_entries SET fetched_at=? WHERE offer_id IN (SELECT offer_id FROM catalog_provider_entries WHERE provider='catalogflow' AND ?=ANY(source_ids))",now,observation.sourceId)
+                }
+                execute(c,"INSERT INTO catalog_sync_state(provider,dataset,cursor) VALUES ('catalogflow',?,?) ON CONFLICT(provider) DO UPDATE SET dataset=EXCLUDED.dataset,cursor=EXCLUDED.cursor",delta.dataset,delta.cursor)
             }
             execute(c, "UPDATE catalog_cache_version SET version=version+1 WHERE id=1")
         } }

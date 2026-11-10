@@ -30,7 +30,7 @@ data class ProviderProduct(
     // Preserve numeric timestamp evidence; converting seconds/milliseconds and freshness policy belongs to PRICE-01.
     val observedAt: BigDecimal?, val lastUpdatedAt: BigDecimal?, val lastSuccessAt: BigDecimal?,
     val stale: Boolean?, val categories: List<ProviderCategory>, val hasStoreMetadata: Boolean,
-    val warnings: List<String>,
+    val warnings: List<String>, val sourceIds: List<String> = emptyList(),
 )
 data class ProviderPage(
     val items: List<ProviderProduct>, val total: Long, val page: Int, val limit: Int,
@@ -41,7 +41,7 @@ data class ProviderPage(
 
 enum class ProviderFailureCode {
     UNCONFIGURED, AUTHENTICATION, FORBIDDEN, RATE_LIMITED, UNAVAILABLE, REDIRECT,
-    TIMEOUT, NETWORK, INVALID_RESPONSE, RESPONSE_TOO_LARGE,
+    TIMEOUT, NETWORK, INVALID_RESPONSE, RESPONSE_TOO_LARGE, DATASET_RESET,
 }
 
 /** Never attach an upstream exception/body/URL/header as a message or cause. */
@@ -49,3 +49,15 @@ class ProviderFailure(
     val code: ProviderFailureCode, val retryable: Boolean = false,
     val retryAfterSeconds: Int? = null, val upstreamStatus: Int? = null,
 ) : RuntimeException("Catalog provider: ${code.name}")
+
+/** Resumable provider protocol; consumer cursors are committed with cache changes. */
+interface IncrementalCatalogProvider : CatalogProvider {
+    suspend fun productSnapshot(after: Long = 0, baseline: String? = null): ProviderSnapshot
+    suspend fun productChanges(cursor: String): ProviderChanges
+}
+data class ProviderSnapshot(val datasetId: String, val items: List<ProviderProduct>, val after: Long,
+    val hasMore: Boolean, val baseline: String, val nextCursor: String, val rejected: Int)
+data class ProviderObservation(val sourceId: String, val observedAt: BigDecimal)
+data class ProviderChange(val id: String, val operation: String, val product: ProviderProduct?, val observation: ProviderObservation? = null)
+data class ProviderChanges(val datasetId: String, val items: List<ProviderChange>, val nextCursor: String,
+    val hasMore: Boolean, val rejected: Int)

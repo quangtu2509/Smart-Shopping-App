@@ -66,3 +66,17 @@ Kiểm thử script dùng khóa/sản phẩm giả, không gọi provider hay da
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\src\test\powershell\catalogflow-local.tests.ps1
 ```
+
+
+## Incremental synchronization (2026-11-03)
+
+With the updated CatalogFlow deployment, full-import commands bootstrap using
+`GET /api/v1/product-snapshot?approved_only=1`, then catch up through
+`GET /api/v1/product-changes?approved_only=1&cursor=...`.
+Subsequent full-import commands use only the stored cursor. Site-filtered imports
+retain the legacy pagination contract. HTTP 409 DATASET_RESET triggers a new snapshot.
+V7 persists dataset/cursor and upstream ID mapping in the same transaction as cache
+updates. Incomplete paging/network failure does not advance the cursor. A reset
+deactivates CatalogFlow cache entries only; shopping snapshots and other providers remain.
+Apply migrations through the existing backend startup after deploying the new upstream
+routes. No agent has run the real provider launcher or changed the development database.
