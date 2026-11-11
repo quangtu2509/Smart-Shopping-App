@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
@@ -68,7 +69,7 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                 Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
                     Column(Modifier.widthIn(max = 560.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val inputError = if (state.branchesOpen) null else when (state.step) {
+                        val inputError = when (state.step) {
                             PlanStep.BUDGET -> state.errors["budget"]
                             PlanStep.STORES -> state.errors["selections"]
                             PlanStep.CATEGORIES -> state.errors["category_ids"]
@@ -106,7 +107,6 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
             }
         }
     }
-    if (state.branchesOpen) BranchDialog(state, onAction)
     if (state.confirmExit) AlertDialog(onDismissRequest = { onAction(PlanAction.CancelExit) }, title = { Text("Rời biểu mẫu?") },
         text = { Text(if (state.pending != null) "Kết quả lưu chưa được xác nhận. Nên thử lưu lại để tránh tạo nháp trùng. Nếu rời form, hãy kiểm tra danh sách kế hoạch trước khi tạo lại."
             else "Thông tin chưa lưu sẽ bị bỏ. Kế hoạch đã lưu của bạn vẫn được giữ.") },
@@ -180,89 +180,159 @@ private fun BudgetStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
 
 @Composable
 private fun StoreStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
-    Intro("Bạn muốn mua ở đâu?", "Chọn 1–${state.maxStores ?: 3} nơi mua. Bạn có thể chọn cả chuỗi hoặc một chi nhánh cụ thể.")
+    Intro("Bạn muốn mua ở đâu?", "Chọn tối đa ${state.maxStores ?: 3} nơi mua. Chuỗi có nhiều chi nhánh cho phép chọn đúng nơi bạn hay ghé.")
     PlanSummary(state, onEdit = { onAction(PlanAction.Back) })
-    PlanNotice("Chọn cả chuỗi không cần quyền vị trí.")
-    OutlinedTextField(state.retailerQuery, { onAction(PlanAction.RetailerQuery(it)) }, Modifier.fillMaxWidth(),
-        label = { Text("Tìm chuỗi cửa hàng") }, enabled = !state.frozen, singleLine = true, shape = RoundedCornerShape(16.dp))
+    SearchField(state.retailerQuery, "Tìm chuỗi cửa hàng", !state.frozen) { onAction(PlanAction.RetailerQuery(it)) }
     ReferenceStatus(state, onAction)
     Text("Cửa hàng & siêu thị", style = MaterialTheme.typography.titleMedium)
     val choices = state.retailers.filter { (it.status == "ACTIVE" || state.draft.selections.any { s -> s.retailerId == it.id }) && it.name.contains(state.retailerQuery.trim(), ignoreCase = true) }
     if (!state.referencesLoading && state.referenceError == null && choices.isEmpty()) PlanNotice(if (state.retailerQuery.isBlank())
-        "Chưa có chuỗi cửa hàng khả dụng. Hãy thử lại sau hoặc chọn cửa hàng đã lưu khác." else "Không tìm thấy chuỗi phù hợp. Thử tên khác hoặc chọn cửa hàng đã lưu.")
-    for (retailer in choices) {
-        val selected = state.draft.selections.filter { it.retailerId == retailer.id }
-        Surface(shape = RoundedCornerShape(20.dp), color = if (selected.isNotEmpty()) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLowest,
-            border = BorderStroke(1.dp, if (selected.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
-            Column(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth().toggleable(selected.isNotEmpty(), enabled = !state.frozen && state.maxStores != null,
-                    role = Role.Checkbox, onValueChange = { onAction(PlanAction.Retailer(retailer.id)) }).padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PlanIcon(R.drawable.ic_plan_store)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(retailer.name, style = MaterialTheme.typography.titleMedium)
-                        Text(when { retailer.status != "ACTIVE" -> "Không còn khả dụng · có thể bỏ chọn"
-                            selected.any { it.storeId != null } -> "${selected.count { it.storeId != null }} chi nhánh đã chọn"
-                            else -> "Cả chuỗi · chưa chọn chi nhánh" }, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Checkbox(selected.isNotEmpty(), null)
-                }
-                if (selected.isNotEmpty()) TextButton({ onAction(PlanAction.Branches(retailer.id)) }, enabled = !state.frozen && retailer.status == "ACTIVE",
-                    modifier = Modifier.padding(start = 44.dp)) { Text("Chọn chi nhánh") }
+        "Chưa có chuỗi cửa hàng khả dụng. Hãy thử tải lại sau." else "Không tìm thấy chuỗi phù hợp. Thử tên khác.")
+    for (retailer in choices) RetailerCard(state, retailer, onAction)
+    val own = state.branches.filter { it.private }
+    if (own.isNotEmpty()) {
+        Text("Cửa hàng của bạn", style = MaterialTheme.typography.titleMedium)
+        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                own.forEach { store -> PlaceOption(store.name, store.address ?: "Cửa hàng riêng của bạn",
+                    store.id in state.draft.selections.mapNotNull { it.storeId }, Role.Checkbox, !state.frozen) { onAction(PlanAction.Store(store.id)) } }
             }
         }
-    }
-    OutlinedButton({ onAction(PlanAction.Branches(null)) }, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !state.frozen) { Text("Chọn cửa hàng đã lưu khác") }
-    if (state.draft.selections.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Đã chọn", style = MaterialTheme.typography.titleMedium)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { state.draft.selections.forEach { selection ->
-            InputChip(selected = true, onClick = { onAction(selection.storeId?.let { PlanAction.Store(it) } ?: PlanAction.Retailer(selection.retailerId!!)) },
-                enabled = !state.frozen, label = { Text("${state.placeName(selection)} · Bỏ chọn") })
-        } }
     }
 }
 
 @Composable
-private fun CategoryStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
-    Intro("Bạn muốn mua gì?", "Chọn một hoặc nhiều nhóm hàng cho kế hoạch. Bạn sẽ tự quyết định các sản phẩm cần mua.")
-    PlanSummary(state, onEdit = { onAction(PlanAction.Back) }, includePlaces = true)
-    ReferenceStatus(state, onAction)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Nhóm hàng", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-        PlanPill("${state.draft.categoryIds.size} đã chọn")
-    }
-    var categoryQuery by rememberSaveable { mutableStateOf("") }
-    var categoryLimit by rememberSaveable { mutableStateOf(60) }
-    val selectedRetailers=state.draft.selections.mapNotNull {it.retailerId}.toSet()
-    val availableCategories = state.categories.filter { category ->
-        category.id in state.draft.categoryIds || (category.status=="ACTIVE" && (category.retailerIds.isEmpty() || category.retailerIds.any {it in selectedRetailers}))
-    }
-    OutlinedTextField(categoryQuery,{categoryQuery=it.take(200);categoryLimit=60},Modifier.fillMaxWidth(),singleLine=true,
-        label={Text("Tìm nhóm hàng")},enabled=!state.frozen)
-    val matchingCategories=availableCategories.filter {categoryQuery.isBlank() || it.name.contains(categoryQuery,ignoreCase=true)}
-    val categories = matchingCategories.take(categoryLimit)
-    if (categories.isEmpty() && !state.referencesLoading && state.referenceError == null) PlanNotice("Chưa có nhóm hàng khả dụng. Hãy thử tải lại, lựa chọn của bạn vẫn được giữ.")
-    val columns = if (LocalDensity.current.fontScale > 1.3f) 1 else 2
-    for (row in categories.chunked(columns)) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        for (category in row) {
-            val selected = category.id in state.draft.categoryIds
-            Surface(Modifier.weight(1f).toggleable(selected, enabled = !state.frozen, role = Role.Checkbox,
-                onValueChange = { onAction(PlanAction.Category(category.id)) }), shape = RoundedCornerShape(20.dp),
-                color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLowest,
-                border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
-                Column(Modifier.padding(16.dp).heightIn(min = 100.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        PlanIcon(R.drawable.ic_plan_category, Modifier.weight(1f).wrapContentWidth(Alignment.Start))
-                        Checkbox(selected, null)
+private fun RetailerCard(state: PlanUiState, retailer: PlanReference, onAction: (PlanAction) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val branches = state.branchesOf(retailer.id)
+    val selected = state.draft.selections.filter { it.retailerId == retailer.id }
+    val chosen = selected.mapNotNull { it.storeId }
+    val active = retailer.status == "ACTIVE"
+    val on = selected.isNotEmpty()
+    Surface(shape = RoundedCornerShape(20.dp), color = if (on) colors.secondaryContainer else colors.surfaceContainerLowest,
+        border = BorderStroke(if (on) 1.5.dp else 1.dp, if (on) colors.primary else colors.outlineVariant)) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().toggleable(on, enabled = !state.frozen && state.maxStores != null,
+                role = Role.Checkbox, onValueChange = { onAction(PlanAction.Retailer(retailer.id)) }).padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.size(44.dp).background(if (on) colors.surface else colors.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                    PlanIcon(R.drawable.ic_plan_store)
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(retailer.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(when {
+                        !active -> "Không còn khả dụng · có thể bỏ chọn"
+                        branches.isEmpty() -> "Giá áp dụng chung toàn chuỗi"
+                        chosen.isNotEmpty() -> "Đã chọn ${chosen.size}/${branches.size} chi nhánh"
+                        on -> "Tất cả ${branches.size} chi nhánh"
+                        else -> "${branches.size} chi nhánh · chọn để xem"
+                    }, style = MaterialTheme.typography.bodySmall, color = if (active) colors.onSurfaceVariant else colors.error)
+                }
+                Checkbox(on, null)
+            }
+            if (on && active && branches.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = colors.outlineVariant)
+                Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
+                    Text("Mua ở chi nhánh nào?", Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                    PlaceOption("Tất cả chi nhánh", "Xem sản phẩm chung của ${retailer.name}", chosen.isEmpty(), Role.RadioButton, !state.frozen) {
+                        onAction(PlanAction.Chain(retailer.id))
                     }
-                    Text(category.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    if (category.status != "ACTIVE") Text("Không còn khả dụng · bỏ chọn", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    branches.forEach { store ->
+                        val picked = store.id in chosen
+                        // Unticking the last branch falls back to the whole chain instead of dropping the retailer.
+                        PlaceOption(branchLabel(store.name, retailer.name), store.address ?: "Chi nhánh ${store.name}", picked, Role.Checkbox, !state.frozen) {
+                            onAction(if (picked && chosen.size == 1) PlanAction.Chain(retailer.id) else PlanAction.Store(store.id))
+                        }
+                    }
                 }
             }
         }
-        if (row.size < columns) Spacer(Modifier.weight(1f))
     }
-    if(matchingCategories.size>categoryLimit) TextButton({categoryLimit+=60},enabled=!state.frozen) {Text("Thêm nhóm hàng (${categories.size}/${matchingCategories.size})")}
+}
+
+/** "Emart Phan Văn Trị" under the Emart card reads as "Phan Văn Trị". */
+private fun branchLabel(name: String, retailer: String): String =
+    if (name.startsWith(retailer, ignoreCase = true)) name.substring(retailer.length).trim().ifBlank { name } else name
+
+@Composable
+private fun PlaceOption(title: String, detail: String, checked: Boolean, role: Role, enabled: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp))
+        .toggleable(checked, enabled = enabled, role = role, onValueChange = { onClick() }).padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (role == Role.RadioButton) RadioButton(checked, null, enabled = enabled) else Checkbox(checked, null, enabled = enabled)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SearchField(value: String, label: String, enabled: Boolean, onChange: (String) -> Unit) {
+    OutlinedTextField(value, { onChange(it.take(200)) }, Modifier.fillMaxWidth(), label = { Text(label) }, enabled = enabled, singleLine = true,
+        shape = RoundedCornerShape(16.dp), leadingIcon = { Icon(painterResource(R.drawable.ic_catalog_search), null, Modifier.size(20.dp)) },
+        trailingIcon = if (value.isEmpty()) null else ({ TextButton({ onChange("") }, enabled = enabled) { Text("Xóa") } }),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search))
+}
+
+private const val CATEGORY_PREVIEW = 12
+
+@Composable
+private fun CategoryStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Intro("Bạn muốn mua gì?", "Chạm để chọn các loại hàng cần mua ở từng nơi. Bạn sẽ tự chọn sản phẩm cụ thể ở bước sau.")
+    PlanSummary(state, onEdit = { onAction(PlanAction.Back) }, includePlaces = true)
+    ReferenceStatus(state, onAction)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Loại hàng", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        PlanPill("${state.draft.categoryIds.size} đã chọn")
+    }
+    var categoryQuery by rememberSaveable { mutableStateOf("") }
+    var expanded by rememberSaveable { mutableStateOf(listOf<String>()) }
+    val selectedRetailers = state.draft.selections.mapNotNull { it.retailerId }.distinct()
+    val availableCategories = state.categories.filter { category ->
+        category.id in state.draft.categoryIds || (category.status == "ACTIVE" && (category.retailerIds.isEmpty() || category.retailerIds.any { it in selectedRetailers }))
+    }
+    SearchField(categoryQuery, "Tìm loại hàng", !state.frozen) { categoryQuery = it }
+    val matching = availableCategories.filter { categoryQuery.isBlank() || it.name.contains(categoryQuery.trim(), ignoreCase = true) }
+    if (matching.isEmpty() && !state.referencesLoading && state.referenceError == null) PlanNotice(if (categoryQuery.isBlank())
+        "Chưa có loại hàng khả dụng. Hãy thử tải lại, lựa chọn của bạn vẫn được giữ." else "Không có loại hàng phù hợp. Thử từ khóa khác.")
+    // Each provider category belongs to one retailer, so grouping by the chosen places avoids look-alike duplicates.
+    val groups = matching.groupBy { c -> c.retailerIds.firstOrNull { it in selectedRetailers } ?: if (c.retailerIds.isEmpty()) "" else "other" }
+    for (key in selectedRetailers + listOf("", "other")) {
+        val items = groups[key] ?: continue
+        val title = when (key) { "" -> "Loại hàng chung"; "other" -> "Đã chọn trước đó"; else -> state.retailers.firstOrNull { it.id == key }?.name ?: "Nơi mua đã chọn" }
+        val open = categoryQuery.isNotBlank() || key in expanded
+        // Keep source order so a tapped chip never jumps; selections past the preview stay visible.
+        val shown = if (open) items else items.filterIndexed { i, c -> i < CATEGORY_PREVIEW || c.id in state.draft.categoryIds }
+        Surface(shape = RoundedCornerShape(20.dp), color = colors.surfaceContainerLowest, border = BorderStroke(1.dp, colors.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PlanIcon(if (key == "" || key == "other") R.drawable.ic_plan_category else R.drawable.ic_plan_store, Modifier.size(20.dp))
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text("${items.count { it.id in state.draft.categoryIds }}/${items.size}", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    shown.forEach { category ->
+                        val selected = category.id in state.draft.categoryIds
+                        FilterChip(selected, { onAction(PlanAction.Category(category.id)) }, enabled = !state.frozen,
+                            label = { Text(category.name, Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodyMedium) },
+                            leadingIcon = if (selected) ({ Icon(painterResource(R.drawable.ic_auth_check), null, Modifier.size(18.dp)) }) else null,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = if (category.status == "ACTIVE") FilterChipDefaults.filterChipColors()
+                                else FilterChipDefaults.filterChipColors(selectedContainerColor = colors.errorContainer, selectedLabelColor = colors.onErrorContainer))
+                    }
+                }
+                if (items.any { it.status != "ACTIVE" && it.id in state.draft.categoryIds })
+                    Text("Loại hàng tô đỏ không còn khả dụng, hãy bỏ chọn.", style = MaterialTheme.typography.bodySmall, color = colors.error)
+                if (categoryQuery.isBlank() && items.size > CATEGORY_PREVIEW) TextButton({ expanded = if (open) expanded - key else expanded + key }, enabled = !state.frozen) {
+                    Text(if (open) "Thu gọn" else "Xem thêm ${items.size - CATEGORY_PREVIEW} loại hàng")
+                }
+            }
+        }
+    }
     PlanNotice("Bản nháp được lưu trước. Danh mục sản phẩm sẽ hiển thị khi có dữ liệu khả dụng; hệ thống không tự thêm món vào kế hoạch.")
 }
 
@@ -316,44 +386,6 @@ private fun PlanSummary(state: PlanUiState, onEdit: (() -> Unit)? = null, includ
     Text("Nơi mua đã chọn", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     state.draft.selections.forEach { selection -> Text("${state.placeName(selection)} · ${if (selection.storeId == null) "Cả chuỗi" else "Chi nhánh cụ thể"}",
         style = MaterialTheme.typography.bodySmall) }
-}
-
-@Composable
-private fun BranchDialog(state: PlanUiState, onAction: (PlanAction) -> Unit) {
-    AlertDialog(onDismissRequest = { onAction(PlanAction.CloseBranches) }, title = { Text("Chọn cửa hàng cụ thể") },
-        text = {
-            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Chi nhánh thay cho lựa chọn cả chuỗi tương ứng. Mỗi cửa hàng được tính là một nơi mua.")
-                OutlinedTextField(state.branchQuery, { onAction(PlanAction.BranchQuery(it)) }, label = { Text("Tên cửa hàng hoặc khu vực") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { onAction(PlanAction.SearchBranches) }))
-                OutlinedButton({ onAction(PlanAction.SearchBranches) }, enabled = !state.branchesLoading) { Text("Tìm cửa hàng") }
-                if (state.branchesLoading) CircularProgressIndicator(Modifier.size(24.dp))
-                state.branchError?.let { ErrorText(it); TextButton({ onAction(PlanAction.SearchBranches) }) { Text("Thử lại") } }
-                if (state.branchSearchPending) Text("Nhấn Tìm cửa hàng để xem kết quả cho tên hoặc khu vực vừa nhập.")
-                if (state.branches.isEmpty() && !state.branchesLoading && state.branchError == null && !state.branchSearchPending)
-                    Text("Chưa có cửa hàng phù hợp trong dữ liệu đã lưu. Bạn vẫn có thể chọn cả chuỗi.")
-                state.branches.forEach { store ->
-                    Row(Modifier.fillMaxWidth().toggleable(state.draft.selections.any { it.storeId == store.id }, role = Role.Checkbox,
-                        onValueChange = { onAction(PlanAction.Store(store.id)) }).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(store.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                            Text(if (store.private) "Cửa hàng riêng của bạn" else "Chi nhánh cụ thể", style = MaterialTheme.typography.bodySmall)
-                            store.address?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                        }
-                        Checkbox(state.draft.selections.any { it.storeId == store.id }, null)
-                    }
-                }
-                if (state.branchCursor != null) TextButton({ onAction(PlanAction.MoreBranches) }, enabled = !state.branchesLoading) { Text("Xem thêm cửa hàng") }
-                state.branchWarnings.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
-                state.attribution.forEach { Text(it, style = MaterialTheme.typography.labelSmall) }
-            }
-        }, confirmButton = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                state.errors["selections"]?.let { ErrorText(it) }
-                TextButton({ onAction(PlanAction.CloseBranches) }) { Text("Xong") }
-            }
-        })
 }
 
 @Composable

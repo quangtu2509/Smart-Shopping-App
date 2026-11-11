@@ -31,6 +31,8 @@ class CrawlDataClient(private val config: CrawlDataConfig, clock: Clock = Clock.
         return decoder.page(http.get(config.origin, "/api/v1/products", params), query, names)
     }
 
+    override suspend fun branches(): List<ProviderBranch> = decoder.branches(http.get(config.origin, "/api/v1/stores", emptyMap()))
+
     private suspend fun categories(reload: Boolean): Map<String, ProviderCategory> = categoryLock.withLock {
         categories?.takeUnless { reload } ?: run {
             val stores = decoder.storeIds(http.get(config.origin, "/api/v1/stores", emptyMap()))
@@ -58,6 +60,20 @@ internal class CrawlDataDecoder {
             val id = identifier(store["id"]) ?: invalid()
             id.takeIf { boolean(store["enabled"]) != false && boolean(store["ready"]) != false }
         }.distinct()
+    }
+
+    /** Enabled, ready stores priced per branch (e.g. Emart). Chain-priced stores are website defaults, not branches. */
+    fun branches(body: String): List<ProviderBranch> {
+        val stores = parse(body) as? JsonArray ?: invalid()
+        if (stores.size > 1000) invalid()
+        return stores.mapNotNull { element ->
+            val store = element as? JsonObject ?: invalid()
+            if (text(store["pricing_scope"]) != "branch" || boolean(store["enabled"]) == false || boolean(store["ready"]) == false) return@mapNotNull null
+            val retailer = text(store["retailer"])?.takeIf { it.matches(retailerPattern) } ?: return@mapNotNull null
+            val external = identifier(store["external_id"]) ?: return@mapNotNull null
+            val name = text(store["name"])?.trim()?.takeIf { it.isNotBlank() }?.take(300) ?: return@mapNotNull null
+            ProviderBranch(retailer, external, name)
+        }.distinctBy { it.website to it.externalId }
     }
 
     fun categories(body: String): List<CrawlCategory> {

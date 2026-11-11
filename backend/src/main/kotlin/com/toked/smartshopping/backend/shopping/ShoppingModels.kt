@@ -22,7 +22,7 @@ import kotlinx.serialization.Serializable
 @Serializable data class Coordinate(val latitude: Double, val longitude: Double)
 @Serializable data class StoreSnapshot(
     val id: String, val version: Int, val retailer_id: String?, val name: String, val address: String?,
-    val location: Coordinate, val source: String, val visibility: String, val can_edit: Boolean = false,
+    val location: Coordinate?, val source: String, val visibility: String, val can_edit: Boolean = false,
 )
 @Serializable data class Offer(
     val ref: OfferRef, val version: String, val product: Product? = null, val store_product_id: String? = null,

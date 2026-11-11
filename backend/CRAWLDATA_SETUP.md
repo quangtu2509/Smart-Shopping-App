@@ -28,6 +28,7 @@ Adapter `catalog/CrawlDataClient.kt` gọi các endpoint sau:
 
 - `GET /api/v1/stores` và `GET /api/v1/categories?store_id=` để lấy tên category. Dữ liệu này được tải lại ở đầu mỗi lượt phân trang. Store bị tắt hoặc chưa sẵn sàng bị bỏ qua.
 - `GET /api/v1/products?limit=&offset=` (tối đa 100 mỗi trang), với các tham số lọc `retailer`, `q`, `category_id`.
+- Sau khi tải sản phẩm, Sync đọc lại `/api/v1/stores` và nạp store có `pricing_scope=branch` đang bật/sẵn sàng vào `shopping_stores` (PUBLIC, `source=CRAWLDATA`, `location`/`address` null vì nguồn không có). Hiện chỉ Emart có chi nhánh: Sala, Phan Văn Trị, Phan Huy Ích. Store `chain` (giá mặc định website) không thành chi nhánh. Chỉ nạp chi nhánh của retailer có trong lượt Sync; chi nhánh bị gỡ upstream chưa bị ẩn.
 
 Mỗi **offer** thành một `ProviderProduct`:
 

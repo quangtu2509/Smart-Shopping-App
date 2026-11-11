@@ -9,7 +9,7 @@ API-PLAN-01–04 sử dụng schema V5 và transaction ShoppingData đã có; kh
 | GET `/api/v1/plans/{id}` | 200 PlanView | Items và tổng lấy từ nền DATA-00. ID không tồn tại/không thuộc owner cùng404. |
 | PATCH `/api/v1/plans/{id}` | 200 PlanView | expected_version bắt buộc; chỉ budget/selections/category_ids được sửa. Một transaction tăng version một lần, no-op giữ version. |
 | GET `/api/v1/retailers` | 200 Page<Reference> | API-REF-01, q/cursor/limit; code/logo_url nullable. Không seed retailer thật bằng dữ liệu mẫu. |
-| GET `/api/v1/map/stores` | 200 map+next_cursor | Phần Store nội bộ của API-MAP-03: bbox bắt buộc, q/retailer_ids/cursor/limit, public và private của owner. |
+| GET `/api/v1/map/stores` | 200 map+next_cursor | Phần Store nội bộ của API-MAP-03: bbox tùy chọn (bỏ trống = danh sách không theo vị trí, gồm cả chi nhánh chưa có tọa độ; có bbox = chỉ store có tọa độ trong khung), q/retailer_ids/cursor/limit, public và private của owner. `location` có thể null. |
 | GET `/api/v1/stores/{id}` | 200 Store | API-STORE-01, can_edit đúng owner; private của người khác404. |
 
 Các route đều cần bearer. Mọi POST/PATCH Plan cần Idempotency-Key, owner lấy từ auth session. Retry cùng key/body/query trả kết quả trước khi kiểm version; key/payload khác409. Request không nhận owner/status/total/snapshot tùy ý. Sửa Plan đã FINALIZED hoặc trạng thái không cho phép trả INVALID_STATE; reopen/finalize thuộc task sau.

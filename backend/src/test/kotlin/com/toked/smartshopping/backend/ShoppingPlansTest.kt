@@ -174,6 +174,10 @@ class ShoppingPlansTest {
         assertNotNull(obj(refs.bodyAsText())["data"]!!.jsonObject["next_cursor"])
         val stores = client.get("/api/v1/map/stores?bbox=105,9,107,11&retailer_ids=plan-retailer-a") { bearerAuth(account.tokens.access_token) }
         assertEquals(HttpStatusCode.OK, stores.status)
+        suspend fun storeIds(query: String) = obj(client.get("/api/v1/map/stores?$query") { bearerAuth(account.tokens.access_token) }.bodyAsText())["data"]!!
+            .jsonObject["map"]!!.jsonObject["stores"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
+        assertTrue("plan-branch-a" in storeIds("retailer_ids=plan-retailer-a"), "without bbox the list is not geographic")
+        assertFalse("plan-branch-a" in storeIds("bbox=0,0,1,1&retailer_ids=plan-retailer-a"))
         assertEquals(HttpStatusCode.OK, client.get("/api/v1/stores/plan-branch-a") { bearerAuth(account.tokens.access_token) }.status)
         assertEquals(HttpStatusCode.UnprocessableEntity, client.get("/api/v1/plans?limit=not-an-int") { bearerAuth(account.tokens.access_token) }.status)
     }

@@ -128,21 +128,24 @@ open class ShoppingRead internal constructor(protected val c: Connection, protec
     }
     internal fun storedStores(bbox: String?, q: String?, retailers: String?, limit: Int, cursor: String?): StoredMapPage {
         pageLimit(limit); searchQuery(q)
+        // Without bbox the list is not geographic: it also returns branches that have no coordinates yet.
         val coordinates = bbox?.split(',')?.map { it.toDoubleOrNull() ?: invalid("bbox", "INVALID_BBOX") }
-            ?: invalid("bbox", "REQUIRED")
-        if (coordinates.size != 4 || coordinates.any { !it.isFinite() }) invalid("bbox", "INVALID_BBOX")
-        val (west, south, east, north) = coordinates
-        if (west !in -180.0..180.0 || east !in -180.0..180.0 || south !in -90.0..90.0 || north !in -90.0..90.0 || west >= east || south >= north)
-            invalid("bbox", "INVALID_BBOX")
+        if (coordinates != null) {
+            if (coordinates.size != 4 || coordinates.any { !it.isFinite() }) invalid("bbox", "INVALID_BBOX")
+            val (west, south, east, north) = coordinates
+            if (west !in -180.0..180.0 || east !in -180.0..180.0 || south !in -90.0..90.0 || north !in -90.0..90.0 || west >= east || south >= north)
+                invalid("bbox", "INVALID_BBOX")
+        }
+        val (west, south, east, north) = coordinates ?: listOf(null, null, null, null)
         val retailerIds = retailers?.split(',') ?: emptyList()
         if (retailerIds.size > 3 || retailerIds.any { it.isBlank() } || retailerIds.distinct().size != retailerIds.size) invalid("retailer_ids", "INVALID_SELECTION")
         val token = ShoppingCursor(listOf(owner.toString(), "stores", bbox, q, retailers), cursor)
         val rows = query(c, """SELECT payload,owner_id FROM shopping_stores WHERE (visibility='PUBLIC' OR owner_id=?)
-            AND (payload->'location'->>'longitude')::numeric BETWEEN ? AND ?
-            AND (payload->'location'->>'latitude')::numeric BETWEEN ? AND ?
+            AND (?::numeric IS NULL OR (payload->'location'->>'longitude')::numeric BETWEEN ? AND ?)
+            AND (?::numeric IS NULL OR (payload->'location'->>'latitude')::numeric BETWEEN ? AND ?)
             AND (?::text IS NULL OR position(lower(?) in lower(coalesce(payload->>'name','')||' '||coalesce(payload->>'address','')))>0)
             AND (cardinality(?::text[])=0 OR retailer_id=ANY(?::text[])) AND (?::text IS NULL OR id>?) ORDER BY id LIMIT ?""",
-            owner, west, east, south, north, q, q, c.createArrayOf("text", retailerIds.toTypedArray()),
+            owner, west, west, east, south, south, north, q, q, c.createArrayOf("text", retailerIds.toTypedArray()),
             c.createArrayOf("text", retailerIds.toTypedArray()), token.after, token.after, limit + 1).use { s -> s.executeQuery().use { r -> buildList {
                 while (r.next()) add(shoppingJson.decodeFromString<StoreSnapshot>(r.getString(1)).copy(can_edit = r.getObject("owner_id") == owner))
             } } }

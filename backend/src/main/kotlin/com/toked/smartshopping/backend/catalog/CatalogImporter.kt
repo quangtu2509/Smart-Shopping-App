@@ -1,6 +1,7 @@
 package com.toked.smartshopping.backend.catalog
 
 import com.toked.smartshopping.backend.*
+import com.toked.smartshopping.backend.shopping.StoreSnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -56,6 +57,7 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
             if (page.upstreamCount == 0) { partial = true; break }
         }
         if (!done) partial = true
+        val branches = source.branches().filter { site == null || it.website == site }
         val now = clock.instant()
         val groups = records.values.groupBy { it.site }.toMutableMap()
         knownSites.forEach { if(it !in groups) groups[it]=emptyList() }
@@ -87,6 +89,16 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
                     retailerId, CatalogNormalizer.retailerName(website), "CATALOGFLOW")
                 execute(c, "INSERT INTO catalog_sources(retailer_id,site,status,fetched_at) VALUES (?,?,?,?) ON CONFLICT(retailer_id) DO UPDATE SET status=EXCLUDED.status,fetched_at=EXCLUDED.fetched_at,error_code=NULL,retry_until=NULL",
                     retailerId, website, if (partial) "PARTIAL" else if (values.isEmpty()) "EMPTY" else "READY", now)
+            }
+            // shortcut: branches removed upstream stay listed (stores have no status column); add one if CrawlData starts retiring branches.
+            for (branch in branches.filter { it.website in groups }) {
+                val retailerId = CatalogNormalizer.retailerId(branch.website)
+                val id = CatalogNormalizer.id("store", branch.website, branch.externalId)
+                // CrawlData publishes no address or coordinates; location stays null rather than guessed.
+                val payload = json.encodeToString(StoreSnapshot(id, 1, retailerId, branch.name, null, null, "CRAWLDATA", "PUBLIC"))
+                execute(c, """INSERT INTO shopping_stores(id,retailer_id,visibility,payload) VALUES (?,?,'PUBLIC',?::jsonb)
+                    ON CONFLICT(id) DO UPDATE SET payload=jsonb_set(EXCLUDED.payload,'{version}',to_jsonb((shopping_stores.payload->>'version')::int+1))
+                    WHERE shopping_stores.payload->>'name' IS DISTINCT FROM EXCLUDED.payload->>'name'""", id, retailerId, payload)
             }
             for (record in records.values) {
                 for (category in record.categories) execute(c, "INSERT INTO shopping_categories(id,name,status) VALUES (?,?,'ACTIVE') ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,status='ACTIVE'", category.id, category.name)

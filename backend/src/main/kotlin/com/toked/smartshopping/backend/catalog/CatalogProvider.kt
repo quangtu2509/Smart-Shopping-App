@@ -5,7 +5,11 @@ import java.math.BigDecimal
 /** Backend-only boundary. These records are evidence from the provider, not Smart Shopping Offers. */
 interface CatalogProvider {
     suspend fun products(query: CatalogQuery = CatalogQuery()): ProviderPage
+    /** Physical branches whose prices are branch-scoped. Chain-wide sources publish none. */
+    suspend fun branches(): List<ProviderBranch> = emptyList()
 }
+
+data class ProviderBranch(val website: String, val externalId: String, val name: String)
 
 data class CatalogQuery(
     val page: Int = 1, val limit: Int = 50, val search: String? = null, val site: String? = null,

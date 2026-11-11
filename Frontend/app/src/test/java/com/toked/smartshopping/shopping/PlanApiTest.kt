@@ -30,7 +30,7 @@ class PlanApiTest {
         server.enqueue(MockResponse().setBody("""{"data":{"map":{"stores":[],"status":"EMPTY","attribution":[],"warnings":[]},"next_cursor":null}}"""))
         assertTrue(gateway.planStores("access", "r/1", "Khu A & B", null).items.isEmpty())
         val stores = server.takeRequest().requestUrl!!
-        assertEquals("-180,-90,180,90", stores.queryParameter("bbox")); assertEquals("r/1", stores.queryParameter("retailer_ids"))
+        assertNull(stores.queryParameter("bbox")); assertEquals("r/1", stores.queryParameter("retailer_ids"))
         assertEquals("Khu A & B", stores.queryParameter("q"))
     }
     @Test fun createAndPatchUseStableBusinessBodyAndMutationKey() = runTest {

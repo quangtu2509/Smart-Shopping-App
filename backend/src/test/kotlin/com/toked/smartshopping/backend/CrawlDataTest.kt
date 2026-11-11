@@ -110,6 +110,23 @@ class CrawlDataTest {
         assertFailsWith<IllegalArgumentException> { CatalogProviders.fromEnvironment(mapOf("CATALOG_PROVIDER" to "crawldata", "CRAWLDATA_BASE_URL" to "http://192.168.1.5:8000")) }
     }
 
+    @Test fun onlyReadyBranchPricedStoresBecomeBranches() = runBlocking {
+        Fixture { offset, limit, _ -> page(emptyList(), 0, limit, offset) }.use { fixture ->
+            fixture.client().use { client ->
+                assertEquals(listOf(ProviderBranch("emart", "sala", "Emart Sala")), client.branches(), "chain-priced website defaults are not branches")
+            }
+        }
+        val decoder = CrawlDataDecoder()
+        val raw = """[{"id":2,"retailer":"emart","external_id":"phan-van-tri","name":" Emart Phan Văn Trị ","enabled":true,"pricing_scope":"branch","ready":true},
+            {"id":3,"retailer":"emart","external_id":"phan-huy-ich","name":"Emart Phan Huy Ích","enabled":true,"pricing_scope":"branch","ready":false},
+            {"id":4,"retailer":"emart","external_id":"off","name":"Emart Off","enabled":false,"pricing_scope":"branch","ready":true},
+            {"id":5,"retailer":"Bad Code","external_id":"x","name":"Bad","enabled":true,"pricing_scope":"branch","ready":true},
+            {"id":6,"retailer":"emart","external_id":"phan-van-tri","name":"Duplicate","enabled":true,"pricing_scope":"branch","ready":true}]"""
+        assertEquals(listOf(ProviderBranch("emart", "phan-van-tri", "Emart Phan Văn Trị")), decoder.branches(raw))
+        assertFailsWith<ProviderFailure> { decoder.branches("""{"not":"a list"}""") }
+        Unit // JUnit 4 rejects a test method whose runBlocking result is not Unit.
+    }
+
     @Test fun everyOfferBecomesOneProviderProduct() = runBlocking {
         Fixture { offset, limit, _ -> page(listOf(emart, bhx, lotte), 3, limit, offset) }.use { fixture ->
             fixture.client().use { client ->
@@ -224,8 +241,26 @@ class CrawlDataTest {
                 val (active, priced) = db.transaction { c -> query(c, "SELECT count(*) FILTER (WHERE e.active), count(*) FILTER (WHERE o.payload->>'price' IS NOT NULL) FROM catalog_entries e JOIN shopping_offers o ON o.id=e.offer_id").use { s ->
                     s.executeQuery().use { r -> r.next(); r.getInt(1) to r.getInt(2) } } }
                 assertEquals(333, active); assertEquals(333, priced)
+                assertTrue(publicStores(db).isEmpty(), "Emart was not part of this sync, so its branches are not imported")
             }
         } finally { resetAuthTestData(db); db.close() }
     }
 
+    private fun publicStores(db: Database) = db.transaction { c ->
+        query(c, "SELECT retailer_id,payload->>'name',jsonb_typeof(payload->'location') FROM shopping_stores WHERE visibility='PUBLIC' ORDER BY id").use { s ->
+            s.executeQuery().use { r -> buildList { while (r.next()) add(Triple(r.getString(1), r.getString(2), r.getString(3))) } }
+        }
+    }
+
+    @Test fun syncImportsBranchPricedStoresOnceWithoutInventedLocation() = runBlocking {
+        val db = Database("jdbc:postgresql://127.0.0.1:55432/auth00_test", "auth00_test", "")
+        try {
+            db.migrate(); resetAuthTestData(db)
+            Fixture { offset, limit, _ -> page(listOf(emart, lotte).drop(offset.toInt()), 2, limit, offset) }.use { fixture ->
+                fixture.client().use { client -> repeat(2) { CatalogImporter(db, client, clock).sync() } }
+                // Only Emart's branch-priced store becomes a pickable branch; chain-priced website defaults (Lotte) do not.
+                assertEquals(listOf(Triple(CatalogNormalizer.retailerId("emart"), "Emart Sala", "null")), publicStores(db))
+            }
+        } finally { resetAuthTestData(db); db.close() }
+    }
 }

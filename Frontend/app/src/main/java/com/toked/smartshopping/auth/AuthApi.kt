@@ -207,7 +207,8 @@ class AuthApi(baseUrl: String, allowLocalHttp: Boolean = false) : AuthGateway {
         return PlanDecoders.references(request(kind, accessToken = accessToken, query = mapOf("limit" to "20", "cursor" to cursor)))
     }
     override suspend fun planStores(accessToken: String, retailerId: String?, query: String, cursor: String?): PlanStorePage =
-        PlanDecoders.stores(request("map/stores", accessToken = accessToken, query = mapOf("bbox" to "-180,-90,180,90",
+        // No bbox: this is the branch picker list, which must include branches without coordinates.
+        PlanDecoders.stores(request("map/stores", accessToken = accessToken, query = mapOf(
             "retailer_ids" to retailerId, "q" to query.takeIf { it.isNotBlank() }, "cursor" to cursor, "limit" to "20")))
     override suspend fun planStore(accessToken: String, id: String): PlanStore =
         PlanDecoders.store(request("stores", accessToken = accessToken, segment = id))

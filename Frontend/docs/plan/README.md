@@ -12,7 +12,7 @@ Source Stitch: ngân sách `6ba84b164eab4cd5b97b8e9ce20bdbc3`, nơi mua `72f5d40
 
 Back hoặc xoay Activity giữ bản nhập. Ý định lưu chưa rõ kết quả được thử lại với cùng key/body; input bị khóa để tránh tạo nháp trùng. Version conflict giữ bản nhập và chỉ tải bản mới khi người dùng xác nhận. Bản nhập chưa lưu nằm trong RAM; sau process death, Home đọc lại những Plan server đã lưu.
 
-Category/retailer lấy từ reference thật. Khi chưa có dữ liệu, UI hiển thị rỗng/thử lại. Chọn chi nhánh hiện đọc Store nội bộ, có cảnh báo phạm vi dữ liệu; GPS/Places/nearest-store còn thuộc nhóm Map/provider. Catalog không tự thêm món, tối ưu hoặc so sánh giá.
+Category/retailer lấy từ reference thật. Khi chưa có dữ liệu, UI hiển thị rỗng/thử lại. Chi nhánh được tải sẵn cùng reference (GET map/stores không bbox) và chỉ hiện ngay trong thẻ của chuỗi có chi nhánh (hiện là Emart): "Tất cả chi nhánh" hoặc tick từng chi nhánh; bỏ tick chi nhánh cuối quay về cả chuỗi. Chuỗi không có chi nhánh ghi "Giá áp dụng chung toàn chuỗi". Store riêng của owner nằm ở mục "Cửa hàng của bạn". Bước loại hàng nhóm chip theo từng nơi mua, mỗi nhóm hiện 12 chip đầu kèm "Xem thêm". GPS/Places/nearest-store còn thuộc nhóm Map/provider. Catalog không tự thêm món, tối ưu hoặc so sánh giá.
 
 ## Chạy và kiểm thử
 

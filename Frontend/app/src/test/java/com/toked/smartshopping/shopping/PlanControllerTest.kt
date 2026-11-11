@@ -28,14 +28,15 @@ class PlanControllerTest {
         var pages = listOf(saved.plan)
         val requests = mutableListOf<PlanMutation>()
         val queries = mutableListOf<Triple<String?, String, String?>>()
-        var storeCursor: String? = "more-stores"
+        var storeCursor: String? = null
         override suspend fun planMaxStores(): Int { refsFailure?.let { throw it }; referenceGate?.await(); return max }
         override suspend fun planReferences(kind: String, cursor: String?) = PlanReferencePage(
             if (kind == "retailers") (1..4).map { PlanReference("r$it", "Chain $it", "ACTIVE") }
             else listOf(PlanReference("c1", "Food", "ACTIVE"), PlanReference("c2", "Home", "ACTIVE"), PlanReference("old", "Old", "INACTIVE")), null)
         override suspend fun planStores(retailerId: String?, query: String, cursor: String?): PlanStorePage {
             queries += Triple(retailerId, query, cursor)
-            return PlanStorePage(listOf(PlanStore("s1", "r1", "Branch 1", "Test area", false)), storeCursor, emptyList(), emptyList())
+            val page = if (cursor == null) listOf(PlanStore("s1", "r1", "Branch 1", "Test area", false)) else listOf(PlanStore("s2", "r1", "Branch 2", null, false))
+            return PlanStorePage(page, if (cursor == null) storeCursor else null, emptyList(), emptyList())
         }
         override suspend fun planStore(id: String) = PlanStore(id, "r1", "Branch 1", null, false)
         override suspend fun plans(cursor: String?) = PlanPage(pages, null)
@@ -90,9 +91,10 @@ class PlanControllerTest {
         val c = controller(Gateway().apply { max = 1 }); c.onAction(PlanAction.New)
         c.onAction(PlanAction.Retailer("r1")); c.onAction(PlanAction.Retailer("r2"))
         assertEquals(1, c.state.value.draft.selections.size); assertTrue("selections" in c.state.value.errors)
-        c.onAction(PlanAction.Branches("r1")); c.onAction(PlanAction.Store("s1"))
+        c.onAction(PlanAction.Store("s1"))
         assertEquals(listOf(Selection("r1", "s1")), c.state.value.draft.selections)
-        c.onAction(PlanAction.Store("s1")); assertTrue(c.state.value.draft.selections.isEmpty())
+        c.onAction(PlanAction.Chain("r1")); assertEquals(listOf(Selection("r1", null)), c.state.value.draft.selections)
+        c.onAction(PlanAction.Store("s1")); c.onAction(PlanAction.Store("s1")); assertTrue(c.state.value.draft.selections.isEmpty())
     }
     @Test fun thirdPlaceIsAllowedAndFourthIsExplainedWithoutChangingSelections() = runTest {
         val c = controller(); c.onAction(PlanAction.New)
@@ -147,12 +149,18 @@ class PlanControllerTest {
         assertNull(c.state.value.referenceError); assertEquals("750000", c.state.value.draft.budget)
         assertEquals(3, c.state.value.maxStores)
     }
-    @Test fun changedBranchQueryDropsOldCursorBeforeSearching() = runTest {
-        val g = Gateway(); val c = controller(g); c.onAction(PlanAction.New); c.onAction(PlanAction.Branches("r1"))
-        assertNotNull(c.state.value.branchCursor)
-        c.onAction(PlanAction.BranchQuery("new area")); c.onAction(PlanAction.MoreBranches)
-        assertEquals(1, g.queries.size); assertNull(c.state.value.branchCursor)
-        c.onAction(PlanAction.SearchBranches); assertEquals(Triple("r1", "new area", null), g.queries.last())
+    @Test fun branchesPreloadEveryPageWithReferencesAndGroupByRetailer() = runTest {
+        val g = Gateway().apply { storeCursor = "page-2" }; val c = controller(g); c.onAction(PlanAction.New)
+        assertEquals(listOf(Triple(null, "", null), Triple(null, "", "page-2")), g.queries)
+        assertEquals(listOf("s1", "s2"), c.state.value.branchesOf("r1").map { it.id }); assertTrue(c.state.value.branchesOf("r2").isEmpty())
+        c.onAction(PlanAction.Store("s2")); assertEquals(listOf(Selection("r1", "s2")), c.state.value.draft.selections)
+    }
+    @Test fun repeatedBranchCursorIsRejectedInsteadOfLooping() = runTest {
+        val looping = object : PlanGateway by Gateway() {
+            override suspend fun planStores(retailerId: String?, query: String, cursor: String?) = PlanStorePage(emptyList(), "same", emptyList(), emptyList())
+        }
+        val c = PlanController(looping, backgroundScope + UnconfinedTestDispatcher(testScheduler)) {}
+        c.onAction(PlanAction.New); assertNotNull(c.state.value.referenceError)
     }
     @Test fun chainFilterIsUiStateAndDoesNotChangeSelectedInputs() = runTest {
         val c = controller(); ready(c); c.onAction(PlanAction.Back)

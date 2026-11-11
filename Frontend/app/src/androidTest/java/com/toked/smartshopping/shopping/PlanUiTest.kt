@@ -99,23 +99,29 @@ class PlanUiTest {
         Espresso.pressBack()
     }
 
-    @Test fun storeSelectionAndBranchCallbackAreDistinctAndFourthChoiceErrorIsVisible() {
+    @Test fun onlyChainsWithBranchesOfferBranchChoicesAndFourthChoiceErrorIsVisible() {
         val events = mutableListOf<PlanAction>()
-        var state by mutableStateOf(fixture(PlanStep.STORES))
+        val branches = listOf(PlanStore("b-sala", "r-a", "Cửa hàng A Sala", null, false), PlanStore("b-pvt", "r-a", "Cửa hàng A Phan Văn Trị", null, false))
+        var state by mutableStateOf(fixture(PlanStep.STORES).copy(branches = branches, stores = branches.associateBy { it.id }))
         compose.setContent { Frame(state, { events += it }) }
         button("Tiếp tục").fullyVisible()
         compose.onNodeWithText("Cửa hàng A").performScrollTo().assertIsDisplayed()
+        // B, C and D have no branches: no branch choices, just the chain-wide note.
+        assertEquals(3, compose.onAllNodesWithText("Giá áp dụng chung toàn chuỗi").fetchSemanticsNodes().size)
+        assertEquals(1, compose.onAllNodesWithText("Tất cả chi nhánh").fetchSemanticsNodes().size)
         picture("stores-light")
+        compose.onNodeWithText("Phan Văn Trị").performScrollTo().performClick()
+        assertEquals(PlanAction.Store("b-pvt"), events.last())
         compose.onNodeWithText("Cửa hàng C").performScrollTo().performClick()
         assertEquals(PlanAction.Retailer("r-c"), events.last())
-        compose.onAllNodesWithText("Chọn chi nhánh")[0].performScrollTo().performClick()
-        assertEquals(PlanAction.Branches("r-a"), events.last())
-        compose.runOnIdle { state = state.copy(draft = state.draft.copy(selections = state.draft.selections + Selection("r-c", null)),
+        compose.runOnIdle { state = state.copy(draft = state.draft.copy(selections = listOf(Selection("r-a", "b-pvt"), Selection("r-b", null), Selection("r-c", null))),
             errors = mapOf("selections" to "Chỉ chọn tối đa 3 nơi mua. Bỏ bớt một lựa chọn trước.")) }
+        compose.onNodeWithText("Đã chọn 1/2 chi nhánh").assertExists()
+        // Unticking the only chosen branch returns to the whole chain instead of dropping the retailer.
+        compose.onNodeWithText("Phan Văn Trị").performScrollTo().performClick()
+        assertEquals(PlanAction.Chain("r-a"), events.last())
         compose.onNodeWithText("Chỉ chọn tối đa 3 nơi mua.", substring = true).fullyVisible()
         button("Tiếp tục").fullyVisible()
-        compose.runOnIdle { state = state.copy(branchesOpen = true, branches = listOf(PlanStore("branch-d", "r-d", "Chi nhánh D", "Khu vực thử nghiệm", false))) }
-        compose.onNodeWithText("Chỉ chọn tối đa 3 nơi mua.", substring = true).assertIsDisplayed()
         picture("branch-limit-error")
     }
 
@@ -208,13 +214,11 @@ class PlanUiTest {
         compose.waitUntil(15000) { !vm.plans.state.value.referencesLoading && vm.plans.state.value.maxStores != null }
         compose.onNodeWithContentDescription("Ngân sách dự kiến").performTextInput("500000")
         button("Tiếp tục").performClick()
+        assertTrue(vm.plans.state.value.branches.any { it.id == "plan-branch-a" })
         compose.onNodeWithText("Cửa hàng thử nghiệm A").performScrollTo().performClick()
-        compose.onAllNodesWithText("Chọn chi nhánh")[0].performScrollTo().performClick()
-        compose.waitUntil(15000) { !vm.plans.state.value.branchesLoading && vm.plans.state.value.branches.isNotEmpty() }
         compose.onNodeWithText("Chi nhánh thử nghiệm A").performScrollTo().performClick()
         assertEquals("plan-branch-a", vm.plans.state.value.draft.selections.single().storeId)
         picture("branch-live")
-        button("Xong").performClick()
         compose.onNodeWithText("Cửa hàng thử nghiệm B").performScrollTo().performClick()
         button("Tiếp tục").performClick()
         compose.onNodeWithText("Thực phẩm cho kế hoạch").performScrollTo().performClick()

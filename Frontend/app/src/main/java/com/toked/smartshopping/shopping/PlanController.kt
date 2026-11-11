@@ -17,11 +17,11 @@ data class PlanUiState(
     val saving: Boolean = false, val opening: Boolean = false, val pending: PlanMutation? = null, val retrySeconds: Int = 0,
     val errors: Map<String, String> = emptyMap(), val message: String? = null, val confirmExit: Boolean = false, val conflict: Boolean = false,
     val plans: List<ShoppingPlan> = emptyList(), val nextCursor: String? = null, val plansLoading: Boolean = false, val plansError: String? = null,
-    val branchesOpen: Boolean = false, val branchRetailer: String? = null, val branchQuery: String = "",
-    val branches: List<PlanStore> = emptyList(), val branchCursor: String? = null, val branchesLoading: Boolean = false,
-    val branchError: String? = null, val branchWarnings: List<String> = emptyList(), val attribution: List<String> = emptyList(), val branchSearchPending: Boolean = false,
+    /** Stores listed for picking (public branches + the owner's private stores), in server order. */
+    val branches: List<PlanStore> = emptyList(),
 ) {
     val frozen: Boolean get() = saving || opening || pending != null
+    fun branchesOf(retailerId: String): List<PlanStore> = branches.filter { it.retailerId == retailerId }
 }
 
 sealed interface PlanAction {
@@ -33,12 +33,9 @@ sealed interface PlanAction {
     data class Retailer(val id: String) : PlanAction
     data class RetailerQuery(val value: String) : PlanAction
     data class Category(val id: String) : PlanAction
-    data class Branches(val retailerId: String?) : PlanAction
-    data class BranchQuery(val value: String) : PlanAction
-    data object SearchBranches : PlanAction
-    data object MoreBranches : PlanAction
+    /** Shop the whole chain instead of specific branches. */
+    data class Chain(val retailerId: String) : PlanAction
     data class Store(val id: String) : PlanAction
-    data object CloseBranches : PlanAction
     data object RetryReferences : PlanAction
     data object ReloadPlans : PlanAction
     data object MorePlans : PlanAction
@@ -59,15 +56,14 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     private var referenceJob: Job? = null
     private var listJob: Job? = null
     private var formJob: Job? = null
-    private var branchJob: Job? = null
     private var retryJob: Job? = null
     private var owner: String? = null
 
     fun clear() {
         catalog.clear()
-        referenceJob?.cancel(); listJob?.cancel(); formJob?.cancel(); branchJob?.cancel()
+        referenceJob?.cancel(); listJob?.cancel(); formJob?.cancel()
         retryJob?.cancel()
-        referenceJob = null; listJob = null; formJob = null; branchJob = null
+        referenceJob = null; listJob = null; formJob = null
         owner = null; mutable.value = PlanUiState()
     }
     fun home(ownerId: String) {
@@ -89,19 +85,9 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
             is PlanAction.Category -> if (action.id in state.value.draft.categoryIds || state.value.categories.any { it.id == action.id && it.status == "ACTIVE" }) edit {
                 it.copy(categoryIds = if (action.id in it.categoryIds) it.categoryIds - action.id else it.categoryIds + action.id)
             }
-            is PlanAction.Branches -> if (!state.value.frozen) {
-                mutable.update { it.copy(branchesOpen = true, branchRetailer = action.retailerId, branchQuery = "", branches = emptyList(), branchCursor = null) }
-                loadBranches()
-            }
-            is PlanAction.BranchQuery -> if (!state.value.frozen) {
-                branchJob?.cancel()
-                mutable.update { it.copy(branchQuery = action.value.take(200), branchCursor = null, branches = emptyList(),
-                    branchesLoading = false, branchError = null, branchSearchPending = true) }
-            }
-            PlanAction.SearchBranches -> loadBranches()
-            PlanAction.MoreBranches -> loadBranches(more = true)
+            is PlanAction.Chain -> if (state.value.retailers.any { it.id == action.retailerId && it.status == "ACTIVE" })
+                choose { current -> current.filterNot { it.retailerId == action.retailerId } + Selection(action.retailerId, null) }
             is PlanAction.Store -> selectStore(action.id)
-            PlanAction.CloseBranches -> { branchJob?.cancel(); mutable.update { it.copy(branchesOpen = false, branchesLoading = false) } }
             PlanAction.RetryReferences -> loadReferences()
             PlanAction.ReloadPlans -> loadPlans()
             PlanAction.MorePlans -> loadPlans(more = true)
@@ -139,7 +125,6 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
         val s = state.value
         if (s.catalogOpen) { catalog.close();mutable.update { it.copy(catalogOpen=false) };return }
         if (s.saving || s.opening) return
-        if (s.branchesOpen) { onAction(PlanAction.CloseBranches); return }
         if (s.pending != null || s.step == PlanStep.BUDGET) {
             val unchanged = if (s.editing) s.saved?.plan?.let { s.draft == PlanDraft.from(it) } == true else s.draft == PlanDraft()
             if (s.pending == null && unchanged) close() else mutable.update { it.copy(confirmExit = true) }
@@ -155,7 +140,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     private fun close() {
         if (state.value.saving) return
         catalog.close()
-        referenceJob?.cancel(); branchJob?.cancel(); formJob?.cancel(); retryJob?.cancel()
+        referenceJob?.cancel(); formJob?.cancel(); retryJob?.cancel()
         mutable.update { PlanUiState(plans = it.plans, nextCursor = it.nextCursor) }
         loadPlans()
     }
@@ -190,8 +175,18 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
                     return result.distinctBy { it.id }
                 }
                 val retailers = all("retailers"); val categories = all("categories")
+                val branches = mutableListOf<PlanStore>(); val seen = mutableSetOf<String>()
+                var cursor: String? = null
+                do {
+                    val page = gateway.planStores(null, "", cursor)
+                    branches += page.items
+                    cursor = page.nextCursor
+                    if (cursor != null && !seen.add(cursor)) throw AuthFailure.InvalidResponse()
+                } while (cursor != null)
                 currentCoroutineContext().ensureActive()
+                val stores = branches.distinctBy { it.id }
                 mutable.update { it.copy(referencesLoading = false, retailers = retailers, categories = categories,
+                    branches = stores, stores = it.stores + stores.associateBy { b -> b.id },
                     maxStores = if (it.editing || it.step == PlanStep.DETAIL) it.saved?.plan?.maxStores ?: limit else limit) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if (!ended(failure)) mutable.update { it.copy(referencesLoading = false, referenceError = "Chưa tải được nơi mua hoặc nhóm hàng. Kiểm tra kết nối và thử lại.") } }
@@ -210,28 +205,10 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
             catch (failure: Exception) { if (!ended(failure)) mutable.update { it.copy(plansLoading = false, plansError = "Chưa tải được kế hoạch đã lưu.") } }
         }
     }
-    private fun loadBranches(more: Boolean = false) {
-        if (!state.value.branchesOpen || state.value.frozen) return
-        if (more && branchJob?.isActive == true) return
-        val s = state.value
-        val cursor = if (more) s.branchCursor ?: return else null
-        branchJob?.cancel()
-        mutable.update { it.copy(branchesLoading = true, branchError = null, branchSearchPending = false) }
-        branchJob = scope.launch {
-            try {
-                val page = gateway.planStores(s.branchRetailer, s.branchQuery.trim(), cursor)
-                currentCoroutineContext().ensureActive()
-                mutable.update { it.copy(branchesLoading = false,
-                    branches = ((if (more) it.branches else emptyList()) + page.items).distinctBy { b -> b.id }, branchCursor = page.nextCursor,
-                    stores = it.stores + page.items.associateBy { b -> b.id }, branchWarnings = page.warnings, attribution = page.attribution) }
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { if (!ended(failure)) mutable.update { it.copy(branchesLoading = false, branchError = "Chưa tải được chi nhánh. Bạn vẫn có thể chọn cả chuỗi.") } }
-        }
-    }
     private fun open(id: String) {
         if (state.value.saving || state.value.opening) return
-        referenceJob?.cancel(); formJob?.cancel(); branchJob?.cancel()
-        mutable.update { it.copy(step = PlanStep.DETAIL, opening = true, message = null, saved = null, conflict = false, branchesOpen = false, pending = null, editing = false) }
+        referenceJob?.cancel(); formJob?.cancel()
+        mutable.update { it.copy(step = PlanStep.DETAIL, opening = true, message = null, saved = null, conflict = false, pending = null, editing = false) }
         formJob = scope.launch {
             try {
                 val view = gateway.plan(id)
