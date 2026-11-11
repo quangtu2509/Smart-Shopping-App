@@ -25,12 +25,13 @@ private val requestIdKey = io.ktor.util.AttributeKey<String>("request-id")
 
 suspend fun main(args: Array<String>) {
     require(args.isEmpty() || args.contentEquals(arrayOf("--check-catalog")) || args.contentEquals(arrayOf("--sync-catalog"))) { "Unknown backend command" }
-    val catalogConfig = CatalogFlowConfig.fromEnvironment()
+    // CATALOG_PROVIDER=crawldata|catalogflow (default catalogflow). Validated up front; nothing connects until a request.
+    CatalogProviders.source()
+    fun configuredCatalog() = CatalogProviders.fromEnvironment() ?: throw ProviderFailure(ProviderFailureCode.UNCONFIGURED)
     if (args.contentEquals(arrayOf("--check-catalog"))) {
-        val configured = catalogConfig ?: throw ProviderFailure(ProviderFailureCode.UNCONFIGURED)
-        CatalogFlowClient(configured).use { provider ->
-            try { println(checkCatalogConnection(provider)) }
-            catch (failure: ProviderFailure) { error("CatalogFlow check failed: ${failure.code}; retry_after_seconds=${failure.retryAfterSeconds}") }
+        configuredCatalog().use { catalog ->
+            try { println(checkCatalogConnection(catalog.provider, catalog.source.label)) }
+            catch (failure: ProviderFailure) { error("${catalog.source.label} check failed: ${failure.code}; retry_after_seconds=${failure.retryAfterSeconds}") }
         }
         return
     }
@@ -38,14 +39,15 @@ suspend fun main(args: Array<String>) {
         ?: error("Set $name in the local environment before starting the backend")
     fun number(name: String, default: Long) = System.getenv(name)?.toLong() ?: default
     if (args.contentEquals(arrayOf("--sync-catalog"))) {
-        val configured = catalogConfig ?: throw ProviderFailure(ProviderFailureCode.UNCONFIGURED)
-        Database(System.getenv("DB_URL") ?: "jdbc:postgresql://localhost:5432/smart_shopping",
-            System.getenv("DB_USER") ?: "smart_shopping_app", required("DB_PASSWORD")).use { database ->
-            database.migrate()
-            CatalogFlowClient(configured).use { provider ->
+        val configured = configuredCatalog()
+        configured.use { catalog ->
+            Database(System.getenv("DB_URL") ?: "jdbc:postgresql://localhost:5432/smart_shopping",
+                System.getenv("DB_USER") ?: "smart_shopping_app", required("DB_PASSWORD")).use { database ->
+                database.migrate()
                 try {
-                    val result = CatalogImporter(database,provider).sync()
-                    println("Catalog sync: received=${result.received}; imported=${result.imported}; rejected=${result.rejected}; sources=${result.sources}; partial=${result.partial}.")
+                    // CrawlData is not incremental: the importer uses its full paged path for it.
+                    val result = CatalogImporter(database,catalog.provider).sync(maxPages = catalog.source.maxSyncPages)
+                    println("Catalog sync (${catalog.source.label}): received=${result.received}; imported=${result.imported}; rejected=${result.rejected}; sources=${result.sources}; partial=${result.partial}.")
                 } catch (failure: ProviderFailure) { error("Catalog sync failed: ${failure.code}; retry_after_seconds=${failure.retryAfterSeconds}") }
             }
         }
@@ -66,10 +68,10 @@ suspend fun main(args: Array<String>) {
             number("LOGIN_LOCK_THRESHOLD",10).toInt(), number("LOGIN_LOCK_SECONDS",900))
         val service = AuthService(db, policy = policy)
         val flows = AuthFlows(db, service, mailer, GoogleTokenVerifier(googleClientId), challengeKey)
-        val catalog = catalogConfig?.let(::CatalogFlowClient)
+        val catalog = CatalogProviders.fromEnvironment()
         try {
             embeddedServer(Netty, host = System.getenv("HTTP_HOST") ?: "127.0.0.1",
-                port = number("HTTP_PORT",8080).toInt()) { authModule(service, flows, catalog) }.start(wait = true)
+                port = number("HTTP_PORT",8080).toInt()) { authModule(service, flows, catalog?.provider) }.start(wait = true)
         } finally { catalog?.close() }
     } finally { db.close() }
 }

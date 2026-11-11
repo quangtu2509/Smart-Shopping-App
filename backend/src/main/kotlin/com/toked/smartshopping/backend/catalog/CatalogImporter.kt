@@ -28,7 +28,7 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
         val recordsByUpstream=linkedMapOf<String,CatalogRecord>()
         val records = linkedMapOf<String, CatalogRecord>()
         val knownSites=linkedSetOf<String>()
-        var received = 0; var rejected = 0; var partial = false; var done = false
+        var received = 0; var consumed = 0L; var rejected = 0; var partial = false; var done = false
         var firstTotal: Long? = null
         if (delta != null) {
             received=delta.products.size+delta.deleted.size+delta.rejected;rejected=delta.rejected;done=true
@@ -45,14 +45,15 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
             if (firstTotal != page.total) partial = true
             partial = partial || page.rejectedItems > 0 || page.warnings.isNotEmpty()
             received += page.items.size + page.rejectedItems
+            consumed += page.upstreamCount
             rejected += page.rejectedItems
             for (item in page.items) {
                 if(site==null || item.website==site) knownSites+=item.website
                 val record = if (site == null || item.website == site) normalizer.normalize(item) else null
                 if (record == null) { rejected++; partial = true } else records[record.offer.ref.id] = record
             }
-            if (received >= page.total || page.total == 0L) { done = true; break }
-            if (page.items.isEmpty() && page.rejectedItems == 0) { partial = true; break }
+            if (consumed >= page.total || page.total == 0L) { done = true; break }
+            if (page.upstreamCount == 0) { partial = true; break }
         }
         if (!done) partial = true
         val now = clock.instant()

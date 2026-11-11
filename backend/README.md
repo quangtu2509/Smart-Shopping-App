@@ -1,6 +1,6 @@
 # Backend local — Auth
 
-CATALOG-01 đã nối Product Service, cache PostgreSQL/V6, API-CATALOG-01–03 và màn sản phẩm Android theo Plan. Xem [CATALOG_API](CATALOG_API.md) để chạy SyncCatalog nạp dữ liệu thật rồi restart backend bằng Run. Nguồn CatalogFlow giữ khóa DPAPI ở backend; [CheckCatalog](CATALOGFLOW_SETUP.md) chỉ đọc một mẫu, không cần database. Quota/quyền/Map và PRICE/List/Compare vẫn còn phạm vi riêng.
+CATALOG-01 đã nối Product Service, cache PostgreSQL/V6, API-CATALOG-01–03 và màn sản phẩm Android theo Plan. Xem [CATALOG_API](CATALOG_API.md) để chạy SyncCatalog nạp dữ liệu thật rồi restart backend bằng Run. Nguồn CatalogFlow giữ khóa DPAPI ở backend; [CheckCatalog](CATALOGFLOW_SETUP.md) chỉ đọc một mẫu, không cần database. Nguồn thay thế CrawlData tự host (`CATALOG_PROVIDER=crawldata`, không cần khóa, HTTP chỉ với localhost) xem [CRAWLDATA_SETUP](CRAWLDATA_SETUP.md). Quota/quyền/Map và PRICE/List/Compare vẫn còn phạm vi riêng.
 
 Ktor + PostgreSQL 18, JDBC/HikariCP và Flyway. Backend là Gradle project riêng, Android giữ compile/target SDK 36. JDK daemon/toolchain 25, Java/Kotlin bytecode target 17. Migration nằm ở `src/main/resources/db/migration/`; Flyway tự áp dụng khi backend khởi động. Không tạo bảng thủ công bằng pgAdmin.
 

@@ -72,6 +72,10 @@ internal class CatalogNormalizer(private val clock: Clock) {
         fun id(kind: String, vararg values: String): String = "cf_${kind}_" + MessageDigest.getInstance("SHA-256")
             .digest(values.joinToString("\u0000").toByteArray(Charsets.UTF_8)).take(16).joinToString("") { "%02x".format(it) }
         fun retailerName(site: String): String = when {
+            // CrawlData retailer codes (exact match, so CatalogFlow sites keep their previous names).
+            site == "bhx" -> "Bách Hóa Xanh"
+            site == "winmart" -> "WinMart"
+            site == "lottemart" -> "Lotte Mart" // would otherwise match the "emart" rule below
             site.contains("bachhoaxanh", true) -> "Bách Hóa Xanh"
             site.contains("coop", true) -> "Co.opmart"
             site.contains("kingfood", true) -> "Kingfoodmart"

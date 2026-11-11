@@ -38,13 +38,19 @@ function Import-CatalogFlowEnvironment {
     } finally { $providerConfig.ApiKey.Dispose() }
 }
 
+# CATALOG_PROVIDER=crawldata uses the keyless local CrawlData service (CRAWLDATA_BASE_URL); unset keeps CatalogFlow.
+$catalogProvider = if ([string]::IsNullOrWhiteSpace($env:CATALOG_PROVIDER)) { 'catalogflow' } else { $env:CATALOG_PROVIDER.Trim().ToLowerInvariant() }
+if ($catalogProvider -notin @('catalogflow','crawldata')) { throw 'CATALOG_PROVIDER must be catalogflow or crawldata.' }
+
 if ($Action -in @('CheckCatalog','SyncCatalog')) {
     $providerNames = @('CATALOGFLOW_API_KEY','CATALOGFLOW_BASE_URL','DB_PASSWORD')
     $providerPrevious = @{}
     foreach ($name in $providerNames) { $providerPrevious[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
     try {
-        Import-CatalogFlowEnvironment
-        if ([string]::IsNullOrWhiteSpace($env:CATALOGFLOW_API_KEY)) { throw 'Configure CatalogFlow using catalogflow-local.ps1 -Action Configure first.' }
+        if ($catalogProvider -eq 'catalogflow') {
+            Import-CatalogFlowEnvironment
+            if ([string]::IsNullOrWhiteSpace($env:CATALOGFLOW_API_KEY)) { throw 'Configure CatalogFlow using catalogflow-local.ps1 -Action Configure first.' }
+        }
         if ($Action -eq 'SyncCatalog' -and [string]::IsNullOrWhiteSpace($env:DB_PASSWORD)) {
             $dbSecret = Read-Host 'PostgreSQL password for smart_shopping_app (hidden)' -AsSecureString
             $env:DB_PASSWORD = Get-SecretText $dbSecret
@@ -53,7 +59,10 @@ if ($Action -in @('CheckCatalog','SyncCatalog')) {
         try {
             $catalogArgument = if ($Action -eq 'SyncCatalog') { '--args=--sync-catalog' } else { '--args=--check-catalog' }
             & .\gradlew.bat run $catalogArgument
-            if ($LASTEXITCODE -ne 0) { throw 'CatalogFlow Kotlin check failed. See the safe failure code above.' }
+            if ($LASTEXITCODE -ne 0) {
+                $providerLabel = if ($catalogProvider -eq 'crawldata') { 'CrawlData' } else { 'CatalogFlow' }
+                throw "$providerLabel Kotlin check failed. See the safe failure code above."
+            }
         }
         finally { Pop-Location }
     } finally {
@@ -86,7 +95,7 @@ $names = @('GOOGLE_WEB_CLIENT_ID','SMTP_HOST','SMTP_PORT','SMTP_USERNAME','SMTP_
 $previous = @{}
 foreach ($name in $names) { $previous[$name] = [Environment]::GetEnvironmentVariable($name,'Process') }
 try {
-    Import-CatalogFlowEnvironment
+    if ($catalogProvider -eq 'catalogflow') { Import-CatalogFlowEnvironment }
     $env:GOOGLE_WEB_CLIENT_ID = $config.WebClientId
     $env:SMTP_HOST = 'smtp.gmail.com'
     $env:SMTP_PORT = '587'

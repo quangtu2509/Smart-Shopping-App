@@ -141,6 +141,26 @@ try {
     Assert-True ($global:SmtpFixtureState.prompts.Count -eq 0 -and $global:SmtpFixtureState.imported.Count -eq 1) 'Sync must reuse provider and DB environment without loading auth secrets'
     Assert-True ($env:DB_PASSWORD -eq 'before-DB_PASSWORD' -and [string]::IsNullOrEmpty($env:CATALOGFLOW_API_KEY)) 'Sync must restore secrets environment'
     $script:passed++
+
+    # CrawlData is keyless: never load or require the CatalogFlow DPAPI store.
+    $previousProvider = $env:CATALOG_PROVIDER
+    try {
+        Reset-Fixture; $global:SmtpFixtureState.providerExists = $true
+        $env:CATALOGFLOW_API_KEY = $null; $env:CATALOGFLOW_BASE_URL = $null; $env:CATALOG_PROVIDER = 'CrawlData'
+        [IO.File]::WriteAllText($script:stubPath, "@echo off`r`nif not `"%CATALOGFLOW_API_KEY%`"==`"`" exit /b 2`r`nif not `"%~3`"==`"--check-catalog`" exit /b 3`r`nexit /b 0`r`n")
+        & $script:fixtureScript -Action CheckCatalog | Out-Null
+        Assert-True ($global:SmtpFixtureState.imported.Count -eq 0 -and $global:SmtpFixtureState.prompts.Count -eq 0) 'CrawlData check must not load CatalogFlow or prompt'
+        $script:passed++
+
+        Reset-Fixture; $env:CATALOGFLOW_API_KEY = $null; $env:CATALOG_PROVIDER = 'crawldata'
+        [IO.File]::WriteAllText($script:stubPath, "@echo off`r`nexit /b 9`r`n")
+        Expect-Failure { & $script:fixtureScript -Action CheckCatalog } 'CrawlData Kotlin check failed'
+        $script:passed++
+
+        Reset-Fixture; $env:CATALOG_PROVIDER = 'other'
+        Expect-Failure { & $script:fixtureScript -Action CheckCatalog } 'CATALOG_PROVIDER must be'
+        $script:passed++
+    } finally { $env:CATALOG_PROVIDER = $previousProvider }
     Write-Output ("Passed {0} auth/provider configuration checks using fake config and a non-Gradle stub." -f $script:passed)
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureRoot)

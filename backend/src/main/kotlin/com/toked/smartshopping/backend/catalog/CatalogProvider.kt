@@ -35,6 +35,8 @@ data class ProviderProduct(
 data class ProviderPage(
     val items: List<ProviderProduct>, val total: Long, val page: Int, val limit: Int,
     val rejectedItems: Int, val warnings: List<String>,
+    /** Upstream records consumed by this page, counted in the unit `total` uses (one product may expand to several offers). */
+    val upstreamCount: Int = items.size + rejectedItems,
 ) {
     val partial: Boolean get() = rejectedItems > 0 || warnings.isNotEmpty() || items.any { it.warnings.isNotEmpty() }
 }
