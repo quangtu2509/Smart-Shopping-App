@@ -122,7 +122,7 @@ class CatalogImporter(private val db: Database, private val provider: CatalogPro
                     val freshness=if (instant<now.minusSeconds(86400)) "STALE" else "FRESH"
                     execute(c,"""UPDATE shopping_offers SET payload=jsonb_set(jsonb_set(jsonb_set(payload,
                         '{observed_at}',to_jsonb(?::text)),'{freshness}',to_jsonb(?::text)),
-                        '{version}',to_jsonb(('cf_observation_'||md5(id||?))::text))
+                        '{version}',to_jsonb((left(payload->>'version',10)||'obs_'||md5(id||?))::text))
                         WHERE kind='CATALOG' AND id IN (SELECT offer_id FROM catalog_provider_entries
                         WHERE provider='catalogflow' AND ?=ANY(source_ids))
                         AND coalesce((payload->>'observed_at')::timestamptz,'epoch'::timestamptz)<=?::timestamptz""",

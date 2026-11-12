@@ -104,10 +104,13 @@ internal class CatalogFlowDecoder {
             ProviderCategory(identifier(item["id"]) ?: return@mapNotNull null, text(item["name"]), safeUrl(text(item["url"])), identifier(item["parent_id"]))
         }.distinctBy { it.id }.take(100)
         return ProviderProduct(id, identifier(obj["product_id"]), name, website, text(obj["source"]), safeUrl(text(obj["url"])),
-            images, text(obj["brand"]), text(obj["sku"]), text(obj["unit"]), text(obj["quantity_label"]), currency, price,
+            // One listing is one listed unit, as in CrawlDataClient; crawldata-smoky leaves `unit` null for most items.
+            images, text(obj["brand"]), text(obj["sku"]), text(obj["unit"])?.takeIf { it.isNotBlank() } ?: "sản phẩm", text(obj["quantity_label"]), currency, price,
             amount("api_price"), amount("original_price"), amount("sale_price"), options, (obj["variants"] as? JsonArray)?.size ?: 0,
             text(obj["availability"]), observed, decimal(obj["last_updated_at"]), decimal(obj["last_success_at"]), stale,
-            categories, (obj["stores"] as? JsonArray)?.isNotEmpty() == true, warnings.distinct(),
+            // `stores` lists the branches carrying the listing, not per-branch prices; the price stays retailer-scoped
+            // and ProductService warns when a branch is selected.
+            categories, false, warnings.distinct(),
             (obj["source_ids"] as? JsonArray).orEmpty().mapNotNull(::identifier).distinct().take(1000))
     }
 

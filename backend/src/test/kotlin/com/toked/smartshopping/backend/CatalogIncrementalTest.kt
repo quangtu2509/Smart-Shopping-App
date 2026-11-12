@@ -13,11 +13,11 @@ import kotlin.test.*
 class CatalogIncrementalTest {
     private lateinit var db: Database
     private val clock=Clock.fixed(Instant.parse("2026-11-03T01:00:00Z"),ZoneOffset.UTC)
-    private fun item(id: String="1", site: String="one.example.test", price: Int=10000): ProviderProduct =
+    private fun item(id: String="1", site: String="one.example.test", price: Int=10000, stores: String="[]", unit: String="\"box\""): ProviderProduct =
         CatalogFlowDecoder().page("""{"items":[{"id":"$id","name":"Milk","website":"$site","approved":true,
-          "source":"listing","url":"https://$site/p/$id","currency":"VND","price":$price,"unit":"box",
+          "source":"listing","url":"https://$site/p/$id","currency":"VND","price":$price,"unit":$unit,
           "observed_at":1793667600,"last_success_at":1793667600,"stale":false,
-          "categories":[{"id":"food","name":"Food"}],"stores":[]}],"total":1,"page":1,"limit":50}""",CatalogQuery()).items.single()
+          "categories":[{"id":"food","name":"Food"}],"stores":$stores}],"total":1,"page":1,"limit":50}""",CatalogQuery()).items.single()
     private class Source:IncrementalCatalogProvider {
         var dataset="generation-1";var cursor="cursor-1";var snapshotCalls=0;var changeCalls=0
         var values=emptyList<ProviderProduct>();var events=emptyList<ProviderChange>()
@@ -85,7 +85,16 @@ class CatalogIncrementalTest {
         val payload=db.transaction { c ->query(c,"SELECT payload::text FROM shopping_offers WHERE kind='CATALOG'").use { q ->q.executeQuery().use { r ->r.next();r.getString(1) } } }
         val obj=kotlinx.serialization.json.Json.parseToJsonElement(payload).toString()
         assertTrue(obj.contains("FRESH"));assertTrue(obj.contains("10000"))
+        assertTrue(obj.contains("\"cf_price2_obs_"),"observation keeps the verified price version")
         assertEquals(1,source.snapshotCalls);assertEquals("cursor-2",savedCursor())
+    }
+
+    @Test fun branchListedCatalogFlowPriceStaysRetailerScoped() {
+        val record=CatalogNormalizer(clock).normalize(item(stores="""[{"id":"1","name":"Emart Gò Vấp"}]"""))!!
+        assertEquals("10000",record.offer.price);assertEquals(com.toked.smartshopping.backend.shopping.PriceScope.RETAILER,record.offer.price_scope)
+        assertFalse(record.offer.warnings.any { it.code=="STORE_PRICE_SCOPE_UNVERIFIED" })
+        val unitless=CatalogNormalizer(clock).normalize(item(unit="null"))
+        assertEquals("sản phẩm",assertNotNull(unitless,"a listing without unit is imported, not rejected").product.unit)
     }
 
 }

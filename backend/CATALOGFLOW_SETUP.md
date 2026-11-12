@@ -80,3 +80,17 @@ updates. Incomplete paging/network failure does not advance the cursor. A reset
 deactivates CatalogFlow cache entries only; shopping snapshots and other providers remain.
 Apply migrations through the existing backend startup after deploying the new upstream
 routes. No agent has run the real provider launcher or changed the development database.
+
+## Store-listed prices (2026-11-12)
+
+`crawldata-smoky` puts a `stores` branch list on every item. CatalogFlow now treats that list as
+coverage, not per-branch pricing: the price is kept with `price_scope=RETAILER`, and selecting a branch
+adds `RETAILER_PRICE_NOT_STORE_CONFIRMED`. The local CrawlData provider still hides `pricing_scope=branch`
+prices. `observed` events keep the version prefix so verified prices are not hidden on read.
+V9 clears the CatalogFlow cursor once, so the next `SyncCatalog` downloads one full snapshot
+(~150–200 MB upstream bandwidth) and re-normalizes the cache.
+
+Most `crawldata-smoky` items have `unit: null`; they were rejected (37,745 of 67,100 on 2026-11-12) and
+made every sync `partial`, which marks sources PARTIAL and re-imports a retailer each time a Plan opens.
+The decoder now defaults a missing unit to `sản phẩm` (one listed unit, as CrawlData does). V10 clears the
+cursor again for one more full snapshot.

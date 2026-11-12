@@ -2,8 +2,9 @@ package com.toked.smartshopping.backend.catalog
 
 /** `CATALOG_PROVIDER` selects the catalog source. Unset keeps CatalogFlow, the pre-existing behavior. */
 enum class CatalogSource(val label: String, val maxSyncPages: Int) {
-    // 100 records per page: CatalogFlow keeps its previous bound; CrawlData (~67k products) needs up to 100k.
-    CATALOGFLOW("CatalogFlow", 200),
+    // 100 records per page, bounded at 100k. The CatalogFlow snapshot (crawldata-smoky, ~67k items) needs ~671 pages;
+    // 200 stopped every bootstrap with UNAVAILABLE because the cursor is saved only after a complete snapshot.
+    CATALOGFLOW("CatalogFlow", 1000),
     CRAWLDATA("CrawlData", 1000),
 }
 
