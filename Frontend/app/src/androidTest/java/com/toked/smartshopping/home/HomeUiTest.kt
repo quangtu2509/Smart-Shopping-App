@@ -8,12 +8,13 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
 import com.toked.smartshopping.auth.*
-import com.toked.smartshopping.shopping.PlanAction
+import com.toked.smartshopping.shopping.*
 import com.toked.smartshopping.ui.theme.SmartShoppingTheme
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import java.math.BigDecimal
 
 class HomeUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
@@ -32,18 +33,41 @@ class HomeUiTest {
         compose.setContent { SmartShoppingTheme(darkTheme = false) {
             HomeContent("owner@example.com", 3, "Cân bằng", {}, {}, {}, onPlanAction = { if (it == PlanAction.New) creates++ })
         } }
-        compose.onNodeWithText("Tạo kế hoạch mua sắm").assertIsDisplayed()
+        compose.onNodeWithText("+ Tạo kế hoạch mới").assertIsDisplayed()
         compose.onNodeWithText("Chưa có kế hoạch mua sắm.", substring = true).assertExists()
         compose.onNodeWithText("500.000₫").assertDoesNotExist()
+        compose.onNodeWithText("Giá tốt hôm nay").assertDoesNotExist()
         picture("home-light.png")
-        compose.onNodeWithText("Bắt đầu ngay").performClick()
+        compose.onNodeWithText("+ Tạo kế hoạch mới").performClick()
         assertEquals(1, creates)
-        compose.onNodeWithText("Tìm kế hoạch, mẫu…").performTextInput("cuối tuần")
-        compose.onNodeWithText("Không có kế hoạch phù hợp với tìm kiếm.").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Xóa tìm kiếm").performClick()
-        compose.onNodeWithText("Tạo kế hoạch mua sắm").assertIsDisplayed()
         compose.onNodeWithText("Mẫu thường dùng").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lịch sử gần đây").performScrollTo().assertIsDisplayed()
         picture("home-light-bottom.png")
+        compose.onNodeWithText("Dùng lại mẫu").performScrollTo().performClick()
+        compose.onNodeWithText("Mẫu chưa sẵn sàng").assertIsDisplayed()
+    }
+
+    @Test fun planCardsShowStatusAndNameMissingPricesInsteadOfZero() {
+        val opened = mutableListOf<PlanAction>()
+        fun money(v: String) = Money("VND", BigDecimal(v))
+        fun plan(id: String, status: PlanState, selected: String, missing: List<String>) = ShoppingPlan(id, 1, 0, status, money("500000"),
+            listOf(Selection("r1", null)), listOf("c1"), 3,
+            BudgetSummary(money("500000"), money(selected), money("500000"), missing.isEmpty(), missing, money("0"), emptyList()),
+            "READY", "2026-11-12T00:00:00Z", "2026-11-12T00:00:00Z")
+        val plans = PlanUiState(plans = listOf(plan("draft", PlanState.DRAFT, "0", emptyList()),
+            plan("final", PlanState.FINALIZED, "245000", listOf("i1"))))
+        compose.setContent { SmartShoppingTheme(darkTheme = false) {
+            HomeContent("owner@example.com", 3, "Cân bằng", {}, {}, {}, plans = plans, onPlanAction = { opened += it })
+        } }
+        compose.onNodeWithText("Bản nháp").assertIsDisplayed()
+        compose.onNodeWithText("Tiếp tục chọn hàng ›").assertIsDisplayed()
+        compose.onNodeWithText("Thiếu giá 1 món").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Đã chọn 245.000 ₫").assertIsDisplayed()
+        // A draft with nothing priced yet must not claim a 0 ₫ total.
+        compose.onNodeWithText("Đã chọn 0 ₫").assertDoesNotExist()
+        compose.onNodeWithText("Xem kế hoạch ›").performScrollTo().performClick()
+        assertEquals(PlanAction.Open("final"), opened.last())
+        picture("home-plans.png")
     }
 
     @Test fun navigationAccountCallbacksAndLogoutConfirmation() {
@@ -96,7 +120,7 @@ class HomeUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Bắt đầu ngay").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("+ Tạo kế hoạch mới").performScrollTo().assertIsDisplayed()
         picture("home-large-font.png")
         compose.onNodeWithText("Mẫu thường dùng").performScrollTo().assertIsDisplayed()
         picture("home-large-font-bottom.png")

@@ -3,7 +3,6 @@ package com.toked.smartshopping.shopping
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,7 +22,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
@@ -46,8 +44,9 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                 IconButton({ onAction(PlanAction.Back) }, enabled = !state.saving && !state.opening) {
                     Icon(painterResource(R.drawable.ic_auth_arrow_back), "Quay lại")
                 }
-                Text(if (number == 0) "Kế hoạch của bạn" else "Tạo kế hoạch", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                Image(painterResource(R.drawable.smart_shopping_logo), "Smart Shopping", Modifier.size(width = 56.dp, height = 36.dp))
+                Text(if (number == 0) "Kế hoạch của bạn" else if (state.editing) "Sửa kế hoạch" else "Tạo kế hoạch", Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (number > 0) TextButton({ onAction(PlanAction.Cancel) }, enabled = !state.saving && !state.opening) { Text("Hủy") }
             }
             if (number > 0) PlanProgress(number)
             key(state.step) {
@@ -91,7 +90,8 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                                 state.pending != null -> "Thử lưu lại"
                                 state.step == PlanStep.DETAIL -> "Xem sản phẩm"
                                 state.step == PlanStep.CATEGORIES && state.editing -> "Lưu thay đổi"
-                                state.step == PlanStep.CATEGORIES -> "Lưu kế hoạch"
+                                // Saving a new plan opens its catalog right away (PlanController.save -> browse).
+                                state.step == PlanStep.CATEGORIES -> "Tạo kế hoạch & xem sản phẩm"
                                 else -> "Tiếp tục"
                             }, textAlign = TextAlign.Center)
                             if (!state.saving) { Spacer(Modifier.width(8.dp)); Icon(painterResource(R.drawable.ic_auth_arrow_forward), null, Modifier.size(20.dp)) }
@@ -100,7 +100,7 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                             if(canEdit) TextButton({ onAction(PlanAction.Edit) }) { Text("Chỉnh sửa kế hoạch") }
                             TextButton({onAction(PlanAction.Back)}) {Text("Về trang chủ")}
                         }
-                        else if (number > 0) Text(when (number) { 1 -> "Bước 2: Chọn nơi mua"; 2 -> "Đã chọn ${state.draft.selections.size}/${state.maxStores ?: 3} nơi mua"; else -> "${state.draft.categoryIds.size} nhóm hàng đã chọn" },
+                        else if (number > 0) Text(when (number) { 1 -> "Tiếp theo: Chọn cửa hàng"; 2 -> "Đã chọn ${state.draft.selections.size}/${state.maxStores ?: 3} nơi mua · Tiếp theo: Chọn nhóm hàng"; else -> "${state.draft.categoryIds.size} nhóm hàng đã chọn" },
                             style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
                     }
                 }
@@ -121,16 +121,14 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
 @Composable
 private fun PlanProgress(number: Int) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("BƯỚC $number/3", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
-            Text("Khởi tạo kế hoạch", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        Text("BƯỚC $number/3", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Ngân sách", "Nơi mua", "Nhóm hàng").forEachIndexed { i, label ->
+            listOf("Ngân sách", "Cửa hàng", "Nhóm hàng").forEachIndexed { i, label ->
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.fillMaxWidth().height(3.dp).background(if (i < number) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape))
-                    Text("${i + 1}. $label", style = MaterialTheme.typography.labelSmall,
-                        color = if (i + 1 == number) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(if (i < number) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape))
+                    Text("${if (i + 1 < number) "✓" else "●"} $label", style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (i + 1 == number) FontWeight.Bold else FontWeight.Normal,
+                        color = if (i < number) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -139,11 +137,7 @@ private fun PlanProgress(number: Int) {
 
 @Composable
 private fun BudgetStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        PlanPill("Trợ lý chi tiêu")
-        Text("Ngân sách của bạn là bao nhiêu?", style = MaterialTheme.typography.headlineMedium)
-        Text("Nhập số tiền dự định chi để theo dõi kế hoạch mua sắm của bạn.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-    }
+    Intro("Ngân sách của bạn là bao nhiêu?", "Mức chi bạn dự định cho lần mua này.")
     Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest, shadowElevation = 1.dp) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,28 +157,29 @@ private fun BudgetStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
             Text("Nhập số tiền không có dấu phân cách hàng nghìn.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    Text("CHỌN NHANH NGÂN SÁCH", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    val presets = listOf("300000" to "Gọn nhẹ", "500000" to "Vừa phải", "1000000" to "Linh hoạt", "1500000" to "Rộng rãi")
-    for (row in presets.chunked(if (LocalDensity.current.fontScale > 1.3f) 1 else 2)) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        for ((amount, label) in row) Surface(Modifier.weight(1f).toggleable(state.draft.budget.toBigDecimalOrNull()?.compareTo(amount.toBigDecimal()) == 0,
-            enabled = !state.frozen, role = Role.RadioButton, onValueChange = { onAction(PlanAction.Budget(amount)) }),
-            shape = RoundedCornerShape(16.dp), color = if (state.draft.budget == amount) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLowest) {
-            Column(Modifier.padding(16.dp).heightIn(min = 48.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(planMoney(amount), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+    Text("CHỌN NHANH", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // Plain amounts only: no "popular"/"safe" labels without data behind them.
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("200000", "500000", "1000000", "2000000").forEach { amount ->
+            val selected = state.draft.budget.toBigDecimalOrNull()?.compareTo(amount.toBigDecimal()) == 0
+            FilterChip(selected, { onAction(PlanAction.Budget(amount)) }, enabled = !state.frozen,
+                label = { Text(planMoney(amount), Modifier.padding(vertical = 10.dp), fontWeight = FontWeight.SemiBold) },
+                leadingIcon = if (selected) ({ Icon(painterResource(R.drawable.ic_auth_check), null, Modifier.size(18.dp)) }) else null,
+                shape = RoundedCornerShape(12.dp))
         }
     }
-    PlanNotice("Ngân sách là mức chi dự kiến. Khi vượt ngân sách, bạn sẽ được cảnh báo để tự quyết định.")
+    PlanNotice("Ngân sách chỉ là mức dự định. Nếu tổng vượt ngân sách, ứng dụng sẽ cảnh báo — bạn vẫn có thể tiếp tục và chỉnh lại sau.")
 }
 
 @Composable
 private fun StoreStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
-    Intro("Bạn muốn mua ở đâu?", "Chọn tối đa ${state.maxStores ?: 3} nơi mua. Chuỗi có nhiều chi nhánh cho phép chọn đúng nơi bạn hay ghé.")
+    Intro("Bạn muốn mua ở đâu?", "Chọn 1–${state.maxStores ?: 3} chuỗi cửa hàng. Chọn chi nhánh cụ thể là tùy chọn.")
     PlanSummary(state, onEdit = { onAction(PlanAction.Back) })
     SearchField(state.retailerQuery, "Tìm chuỗi cửa hàng", !state.frozen) { onAction(PlanAction.RetailerQuery(it)) }
     ReferenceStatus(state, onAction)
-    Text("Cửa hàng & siêu thị", style = MaterialTheme.typography.titleMedium)
+    Text("Chuỗi cửa hàng", style = MaterialTheme.typography.titleMedium)
+    state.maxStores?.let { max -> if (state.draft.selections.size >= max && state.errors["selections"] == null)
+        PlanNotice("Đã đạt tối đa $max nơi mua — bỏ chọn một nơi để đổi.") }
     val choices = state.retailers.filter { (it.status == "ACTIVE" || state.draft.selections.any { s -> s.retailerId == it.id }) && it.name.contains(state.retailerQuery.trim(), ignoreCase = true) }
     if (!state.referencesLoading && state.referenceError == null && choices.isEmpty()) PlanNotice(if (state.retailerQuery.isBlank())
         "Chưa có chuỗi cửa hàng khả dụng. Hãy thử tải lại sau." else "Không tìm thấy chuỗi phù hợp. Thử tên khác.")
@@ -282,11 +277,11 @@ private const val CATEGORY_PREVIEW = 12
 @Composable
 private fun CategoryStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Intro("Bạn muốn mua gì?", "Chạm để chọn các loại hàng cần mua ở từng nơi. Bạn sẽ tự chọn sản phẩm cụ thể ở bước sau.")
+    Intro("Bạn muốn mua gì?", "Chọn một hoặc nhiều nhóm hàng. Bạn chỉ thấy sản phẩm thuộc các nhóm đã chọn.")
     PlanSummary(state, onEdit = { onAction(PlanAction.Back) }, includePlaces = true)
     ReferenceStatus(state, onAction)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Loại hàng", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        Text("Nhóm hàng", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         PlanPill("${state.draft.categoryIds.size} đã chọn")
     }
     var categoryQuery by rememberSaveable { mutableStateOf("") }
@@ -295,15 +290,15 @@ private fun CategoryStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
     val availableCategories = state.categories.filter { category ->
         category.id in state.draft.categoryIds || (category.status == "ACTIVE" && (category.retailerIds.isEmpty() || category.retailerIds.any { it in selectedRetailers }))
     }
-    SearchField(categoryQuery, "Tìm loại hàng", !state.frozen) { categoryQuery = it }
+    SearchField(categoryQuery, "Tìm nhóm hàng", !state.frozen) { categoryQuery = it }
     val matching = availableCategories.filter { categoryQuery.isBlank() || it.name.contains(categoryQuery.trim(), ignoreCase = true) }
     if (matching.isEmpty() && !state.referencesLoading && state.referenceError == null) PlanNotice(if (categoryQuery.isBlank())
-        "Chưa có loại hàng khả dụng. Hãy thử tải lại, lựa chọn của bạn vẫn được giữ." else "Không có loại hàng phù hợp. Thử từ khóa khác.")
+        "Chưa có nhóm hàng khả dụng. Hãy thử tải lại, lựa chọn của bạn vẫn được giữ." else "Không có nhóm hàng phù hợp. Thử từ khóa khác.")
     // Each provider category belongs to one retailer, so grouping by the chosen places avoids look-alike duplicates.
     val groups = matching.groupBy { c -> c.retailerIds.firstOrNull { it in selectedRetailers } ?: if (c.retailerIds.isEmpty()) "" else "other" }
     for (key in selectedRetailers + listOf("", "other")) {
         val items = groups[key] ?: continue
-        val title = when (key) { "" -> "Loại hàng chung"; "other" -> "Đã chọn trước đó"; else -> state.retailers.firstOrNull { it.id == key }?.name ?: "Nơi mua đã chọn" }
+        val title = when (key) { "" -> "Nhóm hàng chung"; "other" -> "Đã chọn trước đó"; else -> state.retailers.firstOrNull { it.id == key }?.name ?: "Nơi mua đã chọn" }
         val open = categoryQuery.isNotBlank() || key in expanded
         // Keep source order so a tapped chip never jumps; selections past the preview stay visible.
         val shown = if (open) items else items.filterIndexed { i, c -> i < CATEGORY_PREVIEW || c.id in state.draft.categoryIds }
@@ -326,14 +321,14 @@ private fun CategoryStep(state: PlanUiState, onAction: (PlanAction) -> Unit) {
                     }
                 }
                 if (items.any { it.status != "ACTIVE" && it.id in state.draft.categoryIds })
-                    Text("Loại hàng tô đỏ không còn khả dụng, hãy bỏ chọn.", style = MaterialTheme.typography.bodySmall, color = colors.error)
+                    Text("Nhóm hàng tô đỏ không còn khả dụng, hãy bỏ chọn.", style = MaterialTheme.typography.bodySmall, color = colors.error)
                 if (categoryQuery.isBlank() && items.size > CATEGORY_PREVIEW) TextButton({ expanded = if (open) expanded - key else expanded + key }, enabled = !state.frozen) {
-                    Text(if (open) "Thu gọn" else "Xem thêm ${items.size - CATEGORY_PREVIEW} loại hàng")
+                    Text(if (open) "Thu gọn" else "Xem thêm ${items.size - CATEGORY_PREVIEW} nhóm hàng")
                 }
             }
         }
     }
-    PlanNotice("Bản nháp được lưu trước. Danh mục sản phẩm sẽ hiển thị khi có dữ liệu khả dụng; hệ thống không tự thêm món vào kế hoạch.")
+    PlanNotice("Sản phẩm được lấy từ ${state.draft.selections.size} nơi mua đã chọn. Món chưa có giá sẽ ghi rõ \"Thiếu giá\", không tính là 0 ₫. Hệ thống không tự thêm món vào kế hoạch.")
 }
 
 @Composable
@@ -360,32 +355,32 @@ private fun PlanDetail(state: PlanUiState) {
 
 @Composable
 private fun PlanSummary(state: PlanUiState, onEdit: (() -> Unit)? = null, includePlaces: Boolean = false) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest) {
-        if (LocalDensity.current.fontScale > 1.3f) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                BudgetSummaryLabel(state)
-                if (includePlaces) PlaceSummaryLabel(state)
-                if (onEdit != null) TextButton(onEdit, enabled = !state.frozen) { Text("Chỉnh sửa") }
+    // Stacked rows wrap long store names instead of truncating them at any font scale.
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PlanIcon(R.drawable.ic_plan_wallet, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Ngân sách: ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(planMoney(state.draft.budget, state.draft.currency), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                if (onEdit != null) TextButton(onEdit, enabled = !state.frozen) { Text("Sửa") }
             }
-        } else Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f)) { BudgetSummaryLabel(state) }
-            if (includePlaces) Column(Modifier.weight(1f)) { PlaceSummaryLabel(state) }
-            if (onEdit != null) TextButton(onEdit, enabled = !state.frozen, contentPadding = PaddingValues(4.dp)) {
-                Text("Chỉnh sửa", style = MaterialTheme.typography.labelMedium)
+            if (includePlaces) {
+                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Row(Modifier.padding(vertical = 6.dp)) {
+                    PlanIcon(R.drawable.ic_plan_store, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Nơi mua đã chọn", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        state.draft.selections.forEach { selection -> Text("${state.placeName(selection)} · ${if (selection.storeId == null) "Cả chuỗi" else "Chi nhánh cụ thể"}",
+                            style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
             }
         }
     }
-}
-
-@Composable private fun BudgetSummaryLabel(state: PlanUiState) {
-    Text("Ngân sách dự kiến", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text(planMoney(state.draft.budget, state.draft.currency), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-}
-@Composable private fun PlaceSummaryLabel(state: PlanUiState) {
-    Text("Nơi mua đã chọn", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    state.draft.selections.forEach { selection -> Text("${state.placeName(selection)} · ${if (selection.storeId == null) "Cả chuỗi" else "Chi nhánh cụ thể"}",
-        style = MaterialTheme.typography.bodySmall) }
 }
 
 @Composable
@@ -423,22 +418,37 @@ private fun ReferenceStatus(state: PlanUiState, onAction: (PlanAction) -> Unit) 
 }
 
 @Composable
-fun PlanHomeCards(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Modifier = Modifier, query: String = "") {
-    val plans = state.plans.filter { query.isBlank() || "${planTitle(it)} ${planMoney(it.budget.amount.toPlainString())} ${planStatus(it.status)}".contains(query, ignoreCase = true) }
+fun PlanHomeCards(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (state.plansLoading) { CircularProgressIndicator(Modifier.size(24.dp)); Text("Đang tải kế hoạch…") }
         state.plansError?.let { PlanNotice(it, error = true); TextButton({ onAction(PlanAction.ReloadPlans) }) { Text("Thử tải lại kế hoạch") } }
-        if (plans.isEmpty() && !state.plansLoading && state.plansError == null) PlanNotice(if (query.isBlank()) "Chưa có kế hoạch mua sắm. Bắt đầu một kế hoạch để sắp xếp nhu cầu và ngân sách." else "Không có kế hoạch phù hợp với tìm kiếm.")
-        plans.forEach { plan ->
-            Surface(onClick = { onAction(PlanAction.Open(plan.id)) }, shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(planTitle(plan), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                        PlanPill(planStatus(plan.status))
+        if (state.plans.isEmpty() && !state.plansLoading && state.plansError == null) PlanNotice("Chưa có kế hoạch mua sắm. Bắt đầu một kế hoạch để sắp xếp nhu cầu và ngân sách.")
+        state.plans.forEach { plan ->
+            val summary = plan.budgetSummary
+            val (badge, onBadge) = when (plan.status) {
+                in editablePlans -> colors.surfaceContainerHigh to colors.onSurfaceVariant
+                PlanState.EXPIRED, PlanState.CANCELLED -> colors.errorContainer to colors.onErrorContainer
+                else -> colors.secondaryContainer to colors.primary
+            }
+            Surface(onClick = { onAction(PlanAction.Open(plan.id)) }, shape = RoundedCornerShape(12.dp), color = colors.surfaceContainerLowest,
+                border = BorderStroke(1.dp, colors.outlineVariant)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(planTitle(plan), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Surface(shape = RoundedCornerShape(8.dp), color = badge) {
+                            Text(planStatus(plan.status), Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = onBadge)
+                        }
                     }
-                    Text(planMoney(plan.budget.amount.toPlainString(), plan.budget.currency), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("${plan.selections.size} nơi mua · ${plan.categoryIds.size} nhóm hàng", style = MaterialTheme.typography.bodyMedium)
+                    Text("${plan.selections.size} nơi mua · Ngân sách ${planMoney(plan.budget.amount.toPlainString(), plan.budget.currency)}",
+                        style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                    // Server totals only; a missing price is named, never shown as 0 ₫.
+                    if (summary.selectedTotal.amount.signum() > 0) Text("Đã chọn ${planMoney(summary.selectedTotal.amount.toPlainString(), summary.selectedTotal.currency)}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    if (summary.missingPriceItemIds.isNotEmpty()) Text("Thiếu giá ${summary.missingPriceItemIds.size} món",
+                        style = MaterialTheme.typography.bodyMedium, color = colors.error, fontWeight = FontWeight.SemiBold)
+                    Text(if (plan.status in editablePlans) "Tiếp tục chọn hàng ›" else "Xem kế hoạch ›", Modifier.align(Alignment.End),
+                        style = MaterialTheme.typography.labelLarge, color = colors.primary)
                 }
             }
         }

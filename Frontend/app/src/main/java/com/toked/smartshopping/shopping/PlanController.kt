@@ -27,6 +27,7 @@ data class PlanUiState(
 sealed interface PlanAction {
     data object New : PlanAction
     data object Back : PlanAction
+    data object Cancel : PlanAction
     data object Continue : PlanAction
     data object Save : PlanAction
     data class Budget(val value: String) : PlanAction
@@ -77,6 +78,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
                 loadReferences()
             }
             PlanAction.Back -> back()
+            PlanAction.Cancel -> cancel()
             PlanAction.Continue -> next()
             PlanAction.Save -> save()
             is PlanAction.Budget -> edit { it.copy(budget = action.value.take(128)) }
@@ -125,17 +127,20 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
         val s = state.value
         if (s.catalogOpen) { catalog.close();mutable.update { it.copy(catalogOpen=false) };return }
         if (s.saving || s.opening) return
-        if (s.pending != null || s.step == PlanStep.BUDGET) {
-            val unchanged = if (s.editing) s.saved?.plan?.let { s.draft == PlanDraft.from(it) } == true else s.draft == PlanDraft()
-            if (s.pending == null && unchanged) close() else mutable.update { it.copy(confirmExit = true) }
-            return
-        }
+        if (s.pending != null || s.step == PlanStep.BUDGET) { cancel(); return }
         when (s.step) {
             PlanStep.STORES -> mutable.update { it.copy(step = PlanStep.BUDGET, errors = emptyMap(), message = null) }
             PlanStep.CATEGORIES -> mutable.update { it.copy(step = PlanStep.STORES, errors = emptyMap(), message = null) }
             PlanStep.DETAIL -> close()
             PlanStep.BUDGET, PlanStep.CLOSED -> Unit
         }
+    }
+    /** Leaves the form from any step; unsaved input or an unconfirmed save asks first. */
+    private fun cancel() {
+        val s = state.value
+        if (s.saving || s.opening) return
+        val unchanged = if (s.editing) s.saved?.plan?.let { s.draft == PlanDraft.from(it) } == true else s.draft == PlanDraft()
+        if (s.pending == null && unchanged) close() else mutable.update { it.copy(confirmExit = true) }
     }
     private fun close() {
         if (state.value.saving) return

@@ -77,6 +77,16 @@ class PlanControllerTest {
     @Test fun emptyFormLeavesWithoutDiscardPrompt() = runTest {
         val c = controller(); c.onAction(PlanAction.New); c.onAction(PlanAction.Back)
         assertEquals(PlanStep.CLOSED, c.state.value.step)
+        c.onAction(PlanAction.New); c.onAction(PlanAction.Cancel)
+        assertEquals(PlanStep.CLOSED, c.state.value.step)
+    }
+    @Test fun headerCancelAsksBeforeDiscardingFromAnyStep() = runTest {
+        val c = controller(); ready(c)
+        c.onAction(PlanAction.Cancel)
+        assertTrue(c.state.value.confirmExit); assertEquals(PlanStep.CATEGORIES, c.state.value.step)
+        c.onAction(PlanAction.CancelExit); assertEquals(listOf("c1"), c.state.value.draft.categoryIds)
+        c.onAction(PlanAction.Cancel); c.onAction(PlanAction.ConfirmExit)
+        assertEquals(PlanStep.CLOSED, c.state.value.step); assertEquals(PlanDraft(), c.state.value.draft)
     }
     @Test fun validatesEveryStepWithoutPostingAndDoesNotAutoSelectPreferences() = runTest {
         val g = Gateway(); val c = controller(g); c.onAction(PlanAction.New)

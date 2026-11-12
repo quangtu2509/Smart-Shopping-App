@@ -105,6 +105,8 @@ class PlanUiTest {
         var state by mutableStateOf(fixture(PlanStep.STORES).copy(branches = branches, stores = branches.associateBy { it.id }))
         compose.setContent { Frame(state, { events += it }) }
         button("Tiếp tục").fullyVisible()
+        button("Hủy").fullyVisible().performClick()
+        assertEquals(PlanAction.Cancel, events.last())
         compose.onNodeWithText("Cửa hàng A").performScrollTo().assertIsDisplayed()
         // B, C and D have no branches: no branch choices, just the chain-wide note.
         assertEquals(3, compose.onAllNodesWithText("Giá áp dụng chung toàn chuỗi").fetchSemanticsNodes().size)
@@ -133,12 +135,12 @@ class PlanUiTest {
             PlanAction.Continue -> saves++
             else -> Unit
         } }) }
-        button("Lưu kế hoạch").fullyVisible()
+        button("Tạo kế hoạch & xem sản phẩm").fullyVisible()
         compose.onNodeWithText("Cửa hàng A · Cả chuỗi").assertExists()
         picture("categories-light")
         compose.onNodeWithText("Đồ dùng gia đình").performScrollTo().performClick()
         assertTrue("home" in state.draft.categoryIds)
-        button("Lưu kế hoạch").performClick(); assertEquals(1, saves)
+        button("Tạo kế hoạch & xem sản phẩm").performClick(); assertEquals(1, saves)
     }
 
     @Test fun loadingEmptyAndReferenceRetryNeverInventRetailers() {
@@ -154,7 +156,7 @@ class PlanUiTest {
         button("Tải lại dữ liệu").performScrollTo().performClick(); assertEquals(1, retries)
         compose.runOnIdle { state = state.copy(step = PlanStep.CATEGORIES, referenceError = null) }
         compose.onNodeWithText("Chưa có nhóm hàng khả dụng.", substring = true).performScrollTo().assertIsDisplayed()
-        button("Lưu kế hoạch").fullyVisible()
+        button("Tạo kế hoạch & xem sản phẩm").fullyVisible()
     }
 
     @Test fun pendingAndSavingDisableEditsButKeepExplicitRetry() {
@@ -185,10 +187,10 @@ class PlanUiTest {
         val initial = fixture(PlanStep.CATEGORIES)
         val state = initial.copy(draft = initial.draft.copy(categoryIds = emptyList()), errors = mapOf("category_ids" to "Chọn ít nhất một nhóm hàng."))
         compose.setContent { Frame(state, {}, font = 2f, dark = true, height = 700) }
-        button("Lưu kế hoạch").fullyVisible()
+        button("Tạo kế hoạch & xem sản phẩm").fullyVisible()
         compose.onNodeWithText("Chọn ít nhất một nhóm hàng.").fullyVisible()
         compose.onNodeWithText("Chăm sóc cá nhân").performScrollTo().assertIsDisplayed()
-        button("Lưu kế hoạch").fullyVisible()
+        button("Tạo kế hoạch & xem sản phẩm").fullyVisible()
         picture("categories-large-dark")
     }
 
@@ -210,7 +212,7 @@ class PlanUiTest {
         compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it, factory)[RegisterViewModel::class.java] }
         compose.setContent { SmartShoppingTheme(darkTheme = false) { RegisterScreen(vm) } }
         compose.waitUntil(15000) { vm.state.value.page == AuthPage.HOME_ENTRY }
-        button("Bắt đầu ngay").performScrollTo().performClick()
+        button("+ Tạo kế hoạch mới").performScrollTo().performClick()
         compose.waitUntil(15000) { !vm.plans.state.value.referencesLoading && vm.plans.state.value.maxStores != null }
         compose.onNodeWithContentDescription("Ngân sách dự kiến").performTextInput("500000")
         button("Tiếp tục").performClick()
@@ -232,7 +234,7 @@ class PlanUiTest {
         compose.waitUntil(15000) { vm.state.value.page == AuthPage.HOME_ENTRY && vm.plans.state.value.step == PlanStep.CATEGORIES }
         assertEquals("500000", vm.plans.state.value.draft.budget)
         assertTrue("plan-food" in vm.plans.state.value.draft.categoryIds)
-        button("Lưu kế hoạch").performClick()
+        button("Tạo kế hoạch & xem sản phẩm").performClick()
         compose.waitUntil(15000) { vm.plans.state.value.step == PlanStep.DETAIL && vm.plans.state.value.saved != null }
         compose.waitUntil(15000) { !vm.plans.catalog.state.value.loading && !vm.plans.catalog.state.value.refreshing && (vm.plans.state.value.saved?.plan?.version ?: 0)>=3 }
         compose.onNodeWithContentDescription("Quay lại kế hoạch").performClick()

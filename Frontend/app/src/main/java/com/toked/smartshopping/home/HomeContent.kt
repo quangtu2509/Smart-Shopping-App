@@ -1,31 +1,29 @@
 package com.toked.smartshopping.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.toked.smartshopping.R
 import com.toked.smartshopping.ui.theme.SmartShoppingTheme
-import com.toked.smartshopping.ui.theme.ShoppingGreen
-import com.toked.smartshopping.ui.theme.ShoppingGreenContainer
 import com.toked.smartshopping.shopping.PlanUiState
 import com.toked.smartshopping.shopping.PlanAction
 import com.toked.smartshopping.shopping.PlanHomeCards
@@ -50,7 +48,6 @@ fun HomeContent(
     onPlanAction: (PlanAction) -> Unit = {},
 ) {
     var tab by rememberSaveable(email) { mutableStateOf(HomeTab.HOME) }
-    var query by rememberSaveable(email) { mutableStateOf("") }
     var notice by rememberSaveable(email) { mutableStateOf<String?>(null) }
     var confirmLogout by rememberSaveable(email) { mutableStateOf(false) }
     BackHandler(tab != HomeTab.HOME) { tab = HomeTab.HOME }
@@ -68,7 +65,7 @@ fun HomeContent(
                         onClick = { tab = destination },
                         icon = { HomeIcon(destination.symbol) },
                         label = { Text(destination.label, style = MaterialTheme.typography.labelSmall, maxLines = 2,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+                            textAlign = TextAlign.Center) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -87,48 +84,30 @@ fun HomeContent(
             ) {
                 when (tab) {
                     HomeTab.HOME -> {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("Tìm kế hoạch, mẫu…", style = MaterialTheme.typography.bodyMedium) },
-                            leadingIcon = { HomeIcon(HomeSymbol.SEARCH) },
-                            trailingIcon = {
-                                if (query.isNotEmpty()) IconButton({ query = "" }) {
-                                    HomeIcon(HomeSymbol.CLOSE, "Xóa tìm kiếm")
-                                }
-                            },
-                            singleLine = true,
-                            shape = CircleShape,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                unfocusedBorderColor = Color.Transparent,
-                            ),
-                        )
-                        if (query.isNotBlank()) {
-                            PlanHomeCards(plans, onPlanAction, query = query.trim())
-                        } else {
-                            PlanningHero { onPlanAction(PlanAction.New) }
-                            HomeSection("Kế hoạch của bạn") {
-                                PlanHomeCards(plans, onPlanAction)
+                        // Two compact actions instead of a hero banner, so saved plans stay above the fold.
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button({ onPlanAction(PlanAction.New) }, Modifier.weight(1f).heightIn(min = 52.dp),
+                                shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)) {
+                                Text("+ Tạo kế hoạch mới", textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge)
                             }
-                            HomeSection("Giá tốt hôm nay") {
-                                EmptyHomeCard(HomeSymbol.STORE, "Chưa có thông tin giá",
-                                    "Giá và ưu đãi sẽ hiển thị khi có nguồn sản phẩm được xác minh.")
+                            OutlinedButton({ tab = HomeTab.TEMPLATES }, Modifier.weight(1f).heightIn(min = 52.dp),
+                                shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)) {
+                                Text("Dùng lại mẫu", textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge)
                             }
-                            HomeSection("Mua sắm gần đây", { tab = HomeTab.HISTORY }) {
-                                EmptyHomeCard(HomeSymbol.HISTORY, "Chưa có lịch sử mua sắm",
-                                    "Các lần mua sắm hoàn tất sẽ được lưu tại đây.")
-                            }
-                            HomeSection("Mẫu thường dùng", { tab = HomeTab.TEMPLATES }) {
-                                Text("Tạo nhanh trong 1 chạm để đi chợ nhẹ nhàng hơn",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                EmptyHomeCard(HomeSymbol.LIST, "Chưa có mẫu đã lưu",
-                                    "Lưu danh sách quen thuộc thành mẫu để dùng lại cho lần sau.")
-                            }
+                        }
+                        HomeSection("Kế hoạch của tôi") {
+                            PlanHomeCards(plans, onPlanAction)
+                        }
+                        HomeSection("Mẫu thường dùng", { tab = HomeTab.TEMPLATES }) {
+                            Text("Dùng lại danh sách cũ — bạn sẽ xác nhận ngân sách và cửa hàng trước khi tạo.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            EmptyHomeCard(HomeSymbol.LIST, "Chưa có mẫu đã lưu",
+                                "Lưu danh sách quen thuộc thành mẫu để dùng lại cho lần sau.")
+                        }
+                        HomeSection("Lịch sử gần đây", { tab = HomeTab.HISTORY }) {
+                            EmptyHomeCard(HomeSymbol.HISTORY, "Chưa có lịch sử mua sắm",
+                                "Các lần mua sắm hoàn tất sẽ được lưu tại đây.")
                         }
                     }
                     HomeTab.ACCOUNT -> {
@@ -178,7 +157,7 @@ private fun HomeHeader(email: String, onAccount: () -> Unit, onNotifications: ()
     Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 1.dp) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilledTonalIconButton(onAccount, Modifier.size(44.dp)) { HomeIcon(HomeSymbol.PERSON, "Mở cá nhân") }
+            Image(painterResource(R.drawable.smart_shopping_logo), "Smart Shopping", Modifier.size(width = 56.dp, height = 36.dp))
             Column(Modifier.weight(1f)) {
                 Text("Xin chào 👋", style = MaterialTheme.typography.titleMedium)
                 Text("Hôm nay bạn muốn mua gì?", style = MaterialTheme.typography.bodySmall,
@@ -186,44 +165,8 @@ private fun HomeHeader(email: String, onAccount: () -> Unit, onNotifications: ()
             }
             IconButton(onNotifications) { HomeIcon(HomeSymbol.BELL, "Thông báo") }
             // Initials use the signed-in owner's email, never a prototype person's photo.
-            FilledTonalIconButton(onAccount, Modifier.size(40.dp)) {
-                Text(email.take(1).uppercase(), style = MaterialTheme.typography.labelLarge)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlanningHero(onCreate: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Surface(shape = RoundedCornerShape(16.dp), shadowElevation = 3.dp) {
-        Column(
-            Modifier.fillMaxWidth()
-                .background(Brush.horizontalGradient(listOf(ShoppingGreen, ShoppingGreenContainer)))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = Color.White.copy(alpha = .16f), shape = CircleShape) {
-                    Text("⊕  Hành động chính", Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        color = Color.White, style = MaterialTheme.typography.labelSmall)
-                }
-                HomeIcon(HomeSymbol.CALENDAR, tint = Color.White)
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Tạo kế hoạch mua sắm", color = Color.White,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold))
-                Text("Lên danh sách & kiểm soát ngân sách của bạn", color = Color.White.copy(alpha = .9f),
-                    style = MaterialTheme.typography.bodyMedium)
-            }
-            Button(onCreate, Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceContainerLowest, contentColor = colors.primary)) {
-                Text("+", fontSize = 24.sp)
-                Spacer(Modifier.width(8.dp))
-                Text("Bắt đầu ngay", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                HomeIcon(HomeSymbol.ARROW)
+            FilledTonalIconButton(onAccount, Modifier.size(48.dp)) {
+                Text(email.take(1).uppercase(), Modifier.semantics { contentDescription = "Mở cá nhân" }, style = MaterialTheme.typography.labelLarge)
             }
         }
     }

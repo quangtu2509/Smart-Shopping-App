@@ -1,12 +1,12 @@
 # PLAN-01 — Tạo và mở lại kế hoạch
 
-Từ Home chọn **Bắt đầu ngay**. Ba bước theo [Stitch](https://stitch.withgoogle.com/projects/11930636729725860020):
+Từ Home chọn **+ Tạo kế hoạch mới**. Ba bước theo [Stitch](https://stitch.withgoogle.com/projects/11930636729725860020):
 
 1. Nhập ngân sách VND lớn hơn 0, ví dụ `500000`, hoặc chọn mức tiền nhanh.
 2. Chọn từ 1 đến `max_stores` nơi mua, tối đa 3 theo Profile. **Cả chuỗi** và **Chi nhánh cụ thể** là hai lựa chọn khác nhau; chọn chi nhánh thay cho chuỗi tương ứng. Không cần GPS để chọn chuỗi.
-3. Chọn nhóm hàng, xem tóm tắt rồi **Lưu kế hoạch**. Backend lưu Plan và app mở catalog. Từ Home có thể mở lại cùng Plan để **Xem sản phẩm** hoặc **Chỉnh sửa kế hoạch**.
+3. Chọn nhóm hàng, xem tóm tắt rồi **Tạo kế hoạch & xem sản phẩm**. Backend lưu Plan và app mở catalog. Từ Home có thể mở lại cùng Plan để **Xem sản phẩm** hoặc **Chỉnh sửa kế hoạch**.
 
-Source Stitch: ngân sách `6ba84b164eab4cd5b97b8e9ce20bdbc3`, nơi mua `72f5d405802d46fba25a512af241ca59`, nhóm hàng `98ee9fa676774e2db55fad9edefba426`. Ảnh kiểm chứng và bản xuất thiết kế được giữ cục bộ.
+Source Stitch (bản chuẩn hóa 12/11/2026): Trang chủ `9cc5cb62c13e4a2baa55531c903dff36`, ngân sách `56873c2981af46f79eef6f092c64eb89`, nơi mua `10cf777466614e37b544dd2f6f11a171`, nhóm hàng `5f04a51dd5f3437fb4a75e633f9858f1`. Header chung có **Hủy** (hỏi trước khi bỏ thông tin chưa lưu); không có nhãn "phổ biến"/"an toàn" hay lời hứa nằm trong ngân sách. Ảnh kiểm chứng và bản xuất thiết kế được giữ cục bộ.
 
 ## Lưu và lỗi
 
