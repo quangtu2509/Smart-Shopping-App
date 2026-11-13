@@ -10,6 +10,8 @@ import java.util.UUID
 enum class PlanStep { CLOSED, BUDGET, STORES, CATEGORIES, DETAIL }
 data class PlanUiState(
     val catalogOpen: Boolean = false,
+    /** Selected list / review / finalized flow, shown above the catalog when both are open. */
+    val listOpen: Boolean = false,
     val step: PlanStep = PlanStep.CLOSED, val draft: PlanDraft = PlanDraft(), val saved: ShoppingPlanView? = null,
     val editing: Boolean = false, val maxStores: Int? = null, val retailers: List<PlanReference> = emptyList(),
     val categories: List<PlanReference> = emptyList(), val stores: Map<String, PlanStore> = emptyMap(), val retailerQuery: String = "",
@@ -19,6 +21,8 @@ data class PlanUiState(
     val plans: List<ShoppingPlan> = emptyList(), val nextCursor: String? = null, val plansLoading: Boolean = false, val plansError: String? = null,
     /** Stores listed for picking (public branches + the owner's private stores), in server order. */
     val branches: List<PlanStore> = emptyList(),
+    /** Plan awaiting delete confirmation on Home. */
+    val confirmDelete: ShoppingPlan? = null,
 ) {
     val frozen: Boolean get() = saving || opening || pending != null
     fun branchesOf(retailerId: String): List<PlanStore> = branches.filter { it.retailerId == retailerId }
@@ -47,6 +51,12 @@ sealed interface PlanAction {
     data object CancelConflict : PlanAction
     data object ConfirmExit : PlanAction
     data object CancelExit : PlanAction
+    data object OpenList : PlanAction
+    data object AddProducts : PlanAction
+    data object Home : PlanAction
+    data class Delete(val id: String) : PlanAction
+    data object ConfirmDelete : PlanAction
+    data object CancelDelete : PlanAction
 }
 
 /** Screen state owned by RegisterViewModel's scope. No I/O starts during construction. */
@@ -54,6 +64,12 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     private val mutable = MutableStateFlow(PlanUiState())
     val state = mutable.asStateFlow()
     val catalog = CatalogController(gateway,scope,{ view -> mutable.update { it.copy(saved=view,draft=PlanDraft.from(view.plan)) } },onSessionEnded)
+    val list = ListController(gateway, scope, { view ->
+        catalog.sync(view)
+        // A finalized Plan no longer accepts catalog additions; leave the catalog underneath.
+        if (view.plan.status !in editablePlans) catalog.close()
+        mutable.update { it.copy(saved = view, draft = PlanDraft.from(view.plan), catalogOpen = it.catalogOpen && view.plan.status in editablePlans) }
+    }, onSessionEnded)
     private var referenceJob: Job? = null
     private var listJob: Job? = null
     private var formJob: Job? = null
@@ -61,7 +77,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     private var owner: String? = null
 
     fun clear() {
-        catalog.clear()
+        catalog.clear(); list.clear()
         referenceJob?.cancel(); listJob?.cancel(); formJob?.cancel()
         retryJob?.cancel()
         referenceJob = null; listJob = null; formJob = null
@@ -100,6 +116,15 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
             PlanAction.CancelConflict -> mutable.update { it.copy(conflict = false) }
             PlanAction.ConfirmExit -> close()
             PlanAction.CancelExit -> mutable.update { it.copy(confirmExit = false) }
+            PlanAction.OpenList -> state.value.saved?.let { view ->
+                if (state.value.saving || state.value.opening) return
+                list.open(view); mutable.update { it.copy(listOpen = true) }
+            }
+            PlanAction.AddProducts -> { list.close(); mutable.update { it.copy(listOpen = false) }; if (!state.value.catalogOpen) browse() }
+            PlanAction.Home -> close()
+            is PlanAction.Delete -> mutable.update { s -> s.copy(confirmDelete = s.plans.firstOrNull { it.id == action.id && it.deletable }) }
+            PlanAction.CancelDelete -> mutable.update { it.copy(confirmDelete = null) }
+            PlanAction.ConfirmDelete -> delete()
         }
     }
     private fun edit(change: (PlanDraft) -> PlanDraft) {
@@ -125,6 +150,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     }
     private fun back() {
         val s = state.value
+        if (s.listOpen) { if (!list.back()) { list.close(); mutable.update { it.copy(listOpen = false) } }; return }
         if (s.catalogOpen) { catalog.close();mutable.update { it.copy(catalogOpen=false) };return }
         if (s.saving || s.opening) return
         if (s.pending != null || s.step == PlanStep.BUDGET) { cancel(); return }
@@ -144,7 +170,7 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     }
     private fun close() {
         if (state.value.saving) return
-        catalog.close()
+        catalog.close(); list.close()
         referenceJob?.cancel(); formJob?.cancel(); retryJob?.cancel()
         mutable.update { PlanUiState(plans = it.plans, nextCursor = it.nextCursor) }
         loadPlans()
@@ -208,6 +234,22 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
                 mutable.update { it.copy(plansLoading = false, plans = ((if (more) it.plans else emptyList()) + page.items).distinctBy { p -> p.id }, nextCursor = page.nextCursor) }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { if (!ended(failure)) mutable.update { it.copy(plansLoading = false, plansError = "Chưa tải được kế hoạch đã lưu.") } }
+        }
+    }
+    private fun delete() {
+        val plan = state.value.confirmDelete ?: return
+        listJob?.cancel()
+        mutable.update { it.copy(confirmDelete = null, plansLoading = true, plansError = null) }
+        listJob = scope.launch {
+            try {
+                // 404: an earlier attempt already deleted it (a retried DELETE cannot replay a missing Plan).
+                try { gateway.deletePlan(plan.id, plan.version) } catch (gone: AuthFailure.Http) { if (gone.status != 404) throw gone }
+                currentCoroutineContext().ensureActive()
+                mutable.update { it.copy(plansLoading = false, plans = it.plans.filterNot { p -> p.id == plan.id }) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { if (!ended(failure)) mutable.update { it.copy(plansLoading = false, plansError =
+                if (failure is AuthFailure.Http && failure.status == 409) "Kế hoạch đã thay đổi hoặc đã chốt nên chưa xóa được. Tải lại rồi thử lại."
+                else "Chưa xóa được kế hoạch. Kiểm tra kết nối và thử lại.") } }
         }
     }
     private fun open(id: String) {
@@ -281,6 +323,8 @@ class PlanController(private val gateway: PlanGateway, private val scope: Corout
     }
 }
 
+/** Only never-finalized Plans can be deleted; a revision is kept for Session/History. */
+val ShoppingPlan.deletable: Boolean get() = revision == 0
 val editablePlans = setOf(PlanState.DRAFT, PlanState.BROWSING_PRODUCTS, PlanState.BUILDING_LIST, PlanState.COMPARING, PlanState.OPTIMIZING)
 fun PlanUiState.placeName(selection: Selection): String = selection.storeId?.let { stores[it]?.name ?: "Chi nhánh đã lưu" }
     ?: retailers.firstOrNull { it.id == selection.retailerId }?.name ?: "Chuỗi đã lưu"

@@ -53,6 +53,14 @@ class AuthSessionRepository(private val api: AuthGateway, private val store: Ses
     override suspend fun refreshCatalog(planId: String, intent: CatalogRefreshIntent): ShoppingPlan = mutex.withLock { authorized { api.refreshCatalog(it,planId,intent) } }
     override suspend fun productDetail(planId: String, productId: String): CatalogDetail = mutex.withLock { authorized { api.productDetail(it,planId,productId) } }
     override suspend fun savePlan(mutation: PlanMutation): ShoppingPlanView = mutex.withLock { authorized { api.savePlan(it, mutation) } }
+    override suspend fun deletePlan(id: String, version: Int) = mutex.withLock { authorized { api.deletePlan(it, id, version) } }
+    override suspend fun addItem(planId: String, mutation: PlanMutation): ShoppingPlanView = mutex.withLock { authorized { api.addItem(it, planId, mutation) } }
+    override suspend fun changeItem(planId: String, itemId: String, mutation: PlanMutation): ShoppingPlanView = mutex.withLock { authorized { api.changeItem(it, planId, itemId, mutation) } }
+    override suspend fun removeItem(planId: String, itemId: String, version: Int, confirmEssential: Boolean): ShoppingPlanView =
+        mutex.withLock { authorized { api.removeItem(it, planId, itemId, version, confirmEssential) } }
+    override suspend fun reviewPlan(planId: String, version: Int): FinalizationReview = mutex.withLock { authorized { api.reviewPlan(it, planId, version) } }
+    override suspend fun finalizePlan(planId: String, mutation: PlanMutation) = mutex.withLock { authorized { api.finalizePlan(it, planId, mutation) } }
+    override suspend fun reopenPlan(planId: String, mutation: PlanMutation): ShoppingPlanView = mutex.withLock { authorized { api.reopenPlan(it, planId, mutation) } }
 
     suspend fun revoke(id: String): Boolean = mutex.withLock {
         val current = session ?: throw AuthFailure.SessionEnded()

@@ -54,7 +54,20 @@ import kotlinx.serialization.Serializable
     val item_id: String, val offer_ref: OfferRef?, val store_id: String?, val retailer_id: String?,
     val quantity: String, val price_snapshot: Offer?, val subtotal: String?,
 )
-/** Persistence payload, distinct from the future FinalizedPlan HTTP result. Never hydrate from live catalog on read. */
+/**
+ * API-FINAL-01. Stateless: review_id is a digest of the reviewed items and Plan version, so finalize recomputes it and any
+ * later price/version change invalidates the review. `view` carries items/totals with current catalog prices applied.
+ */
+@Serializable data class FinalizationReview(
+    val review_id: String, val plan_version: Int, val view: PlanView, val price_changed_item_ids: List<String>,
+    val store_count: Int, val can_finalize: Boolean,
+)
+/** API-FINAL-02 result. */
+@Serializable data class FinalizedPlan(
+    val plan: Plan, val revision: Int, val finalized_at: String, val allocations: List<Allocation>,
+    val price_snapshots: List<Offer>, val budget_summary: BudgetSummary, val warnings: List<ShoppingWarning>,
+)
+/** Persistence payload, distinct from the FinalizedPlan HTTP result. Never hydrate from live catalog on read. */
 @Serializable data class RevisionSnapshot(
     val plan: Plan, val items: List<ShoppingItem>, val products: List<Product>, val stores: List<StoreSnapshot>,
     val allocations: List<Allocation>, val finalized_at: String,

@@ -33,8 +33,10 @@ import com.toked.smartshopping.R
 
 @Composable
 fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Modifier = Modifier,
-    catalog: CatalogUiState = CatalogUiState(), onCatalogAction: (CatalogAction)->Unit = {}) {
-    if(state.catalogOpen) { CatalogContent(catalog,state,onCatalogAction,{onAction(PlanAction.Back)},modifier);return }
+    catalog: CatalogUiState = CatalogUiState(), onCatalogAction: (CatalogAction)->Unit = {},
+    list: ListUiState = ListUiState(), onListAction: (ListAction)->Unit = {}) {
+    if(state.listOpen) { ListContent(list,state,onListAction,onAction,modifier);return }
+    if(state.catalogOpen) { CatalogContent(catalog,state,onCatalogAction,{onAction(PlanAction.Back)},modifier,onOpenList={onAction(PlanAction.OpenList)});return }
     BackHandler { onAction(PlanAction.Back) }
     val colors = MaterialTheme.colorScheme
     val number = when (state.step) { PlanStep.BUDGET -> 1; PlanStep.STORES -> 2; PlanStep.CATEGORIES -> 3; PlanStep.CLOSED, PlanStep.DETAIL -> 0 }
@@ -77,6 +79,7 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                         inputError?.let { ErrorText(it) }
                         val canEdit = state.saved?.plan?.status in editablePlans
                         Button(onClick = { onAction(when {
+                            state.step == PlanStep.DETAIL && !canEdit -> PlanAction.OpenList
                             state.step == PlanStep.DETAIL -> PlanAction.Browse
                             state.pending != null -> PlanAction.Save
                             else -> PlanAction.Continue
@@ -88,6 +91,7 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                                 state.saving -> "Đang lưu…"
                                 state.retrySeconds > 0 -> "Thử lại sau ${state.retrySeconds}s"
                                 state.pending != null -> "Thử lưu lại"
+                                state.step == PlanStep.DETAIL && !canEdit -> "Xem kế hoạch đã chốt"
                                 state.step == PlanStep.DETAIL -> "Xem sản phẩm"
                                 state.step == PlanStep.CATEGORIES && state.editing -> "Lưu thay đổi"
                                 // Saving a new plan opens its catalog right away (PlanController.save -> browse).
@@ -96,6 +100,9 @@ fun PlanContent(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: Mo
                             }, textAlign = TextAlign.Center)
                             if (!state.saving) { Spacer(Modifier.width(8.dp)); Icon(painterResource(R.drawable.ic_auth_arrow_forward), null, Modifier.size(20.dp)) }
                         }
+                        val itemCount = state.saved?.items?.size ?: 0
+                        if (state.step == PlanStep.DETAIL && canEdit && itemCount > 0)
+                            OutlinedButton({ onAction(PlanAction.OpenList) }, Modifier.fillMaxWidth(), enabled = !state.opening) { Text("Danh sách đã chọn ($itemCount món)") }
                         if (state.step == PlanStep.DETAIL) Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                             if(canEdit) TextButton({ onAction(PlanAction.Edit) }) { Text("Chỉnh sửa kế hoạch") }
                             TextButton({onAction(PlanAction.Back)}) {Text("Về trang chủ")}
@@ -447,11 +454,26 @@ fun PlanHomeCards(state: PlanUiState, onAction: (PlanAction) -> Unit, modifier: 
                         style = MaterialTheme.typography.bodyMedium)
                     if (summary.missingPriceItemIds.isNotEmpty()) Text("Thiếu giá ${summary.missingPriceItemIds.size} món",
                         style = MaterialTheme.typography.bodyMedium, color = colors.error, fontWeight = FontWeight.SemiBold)
-                    Text(if (plan.status in editablePlans) "Tiếp tục chọn hàng ›" else "Xem kế hoạch ›", Modifier.align(Alignment.End),
-                        style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        if (plan.deletable) TextButton({ onAction(PlanAction.Delete(plan.id)) }, Modifier.semantics { contentDescription = "Xóa ${planTitle(plan)}" },
+                            enabled = !state.plansLoading, contentPadding = PaddingValues(horizontal = 4.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = colors.error)) {
+                            Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Xóa")
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text(if (plan.status in editablePlans) "Tiếp tục chọn hàng ›" else "Xem kế hoạch ›",
+                            style = MaterialTheme.typography.labelLarge, color = colors.primary)
+                    }
                 }
             }
         }
         if (state.nextCursor != null) OutlinedButton({ onAction(PlanAction.MorePlans) }, enabled = !state.plansLoading) { Text("Xem thêm kế hoạch") }
+    }
+    state.confirmDelete?.let { plan ->
+        AlertDialog(onDismissRequest = { onAction(PlanAction.CancelDelete) },
+            title = { Text("Xóa kế hoạch?") },
+            text = { Text("${planTitle(plan)} và các món đã chọn sẽ bị xóa vĩnh viễn.") },
+            dismissButton = { TextButton({ onAction(PlanAction.CancelDelete) }) { Text("Hủy") } },
+            confirmButton = { TextButton({ onAction(PlanAction.ConfirmDelete) }, colors = ButtonDefaults.textButtonColors(contentColor = colors.error)) { Text("Xóa kế hoạch") } })
     }
 }

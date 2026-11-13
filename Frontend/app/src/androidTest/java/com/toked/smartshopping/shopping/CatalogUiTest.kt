@@ -79,12 +79,12 @@ class CatalogUiTest {
         assertEquals(CatalogAction.Category("c1"),actions.last())
         picture("catalog-light")
     }
-    @Test fun paginationAndDetailsDispatchCorrectIdentities() {
+    @Test fun paginationAndAddDispatchCorrectIdentities() {
         val actions=mutableListOf<CatalogAction>()
         compose.setContent {Frame(initial(),{actions+=it})}
         list().performScrollToNode(hasText("Thực phẩm kiểm thử 1"))
-        compose.onNodeWithText("Thực phẩm kiểm thử 1").performClick()
-        assertEquals(CatalogAction.Details("p1"),actions.last())
+        compose.onNodeWithContentDescription("Thêm Thực phẩm kiểm thử 1 vào giỏ hàng").performClick()
+        assertEquals(CatalogAction.Add(offer(1)),actions.last())
         list().performScrollToNode(hasText("Tải thêm sản phẩm"))
         compose.onNodeWithText("Tải thêm sản phẩm").performClick()
         assertEquals(CatalogAction.More,actions.last())
@@ -104,14 +104,18 @@ class CatalogUiTest {
         list().performScrollToNode(hasText("Chưa tải được sản phẩm"))
         picture("catalog-failed")
     }
-    @Test fun detailsExplainSourceScopeAndUnknownStock() {
-        val selected=offer(1)
-        val actions=mutableListOf<CatalogAction>()
-        compose.setContent {Frame(initial().copy(selectedProduct="p1",detail=CatalogDetail(selected.product!!,listOf(selected),emptyList())),{actions+=it})}
-        compose.onNodeWithText("Giá theo chuỗi, chưa xác nhận tại chi nhánh.").assertIsDisplayed()
-        compose.onNodeWithText("Tồn kho: Chưa xác nhận").assertIsDisplayed()
-        picture("catalog-detail")
-        compose.onNodeWithText("Đóng chi tiết").performClick();assertEquals(CatalogAction.CloseDetails,actions.last())
+    @Test fun saleShowsDiscountAndAddedItemCannotBeAddedAgain() {
+        val sale=offer(1).copy(listPrice=Money("VND",BigDecimal("37500")))
+        val item=ShoppingItem("i1","p2",null,OfferRef("CATALOG","o2"),Quantity.parse("1"),"hộp","RECOMMENDED",null,null)
+        val state=initial().let {it.copy(items=listOf(sale,offer(2)),plan=it.plan!!.copy(items=listOf(item)))}
+        compose.setContent {Frame(state)}
+        list().performScrollToNode(hasText("-20%"))
+        compose.onNodeWithText("-20%").assertIsDisplayed()
+        compose.onNodeWithText("37.500 ₫").assertIsDisplayed()
+        list().performScrollToNode(hasText("Thực phẩm kiểm thử 2"))
+        compose.onNodeWithContentDescription("Đã thêm Thực phẩm kiểm thử 2 vào danh sách").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Thêm Thực phẩm kiểm thử 2 vào giỏ hàng").assertDoesNotExist()
+        picture("catalog-sale-added")
     }
     @Test fun filtersAndRateLimitAreAccessible() {
         val actions=mutableListOf<CatalogAction>()
@@ -121,9 +125,10 @@ class CatalogUiTest {
     }
     @Test fun unverifiedStorePriceIsNotPresentedAsAChainPrice() {
         val scoped=offer(1,true).copy(warnings=listOf(ShoppingWarning("STORE_PRICE_SCOPE_UNVERIFIED","Cần xác minh chi nhánh.",emptyList())))
-        compose.setContent {Frame(initial().copy(selectedProduct="p1",detail=CatalogDetail(scoped.product!!,listOf(scoped),emptyList())))}
-        compose.onNodeWithText("Phạm vi áp dụng giá chưa được xác minh từ dữ liệu cửa hàng.").assertIsDisplayed()
-        compose.onNodeWithText("Giá theo chuỗi, chưa xác nhận tại chi nhánh.").assertDoesNotExist()
+        compose.setContent {Frame(initial().copy(items=listOf(scoped)))}
+        list().performScrollToNode(hasText("Phạm vi giá cần xác minh",substring=true))
+        compose.onNodeWithText("1 sản phẩm đã tải · Phạm vi giá cần xác minh").assertIsDisplayed()
+        compose.onNodeWithText("Giá theo chuỗi",substring=true).assertDoesNotExist()
     }
     @Test fun largeFontDarkCanScrollCardsAndNavigateBack() {
         var back=false
@@ -167,19 +172,20 @@ class CatalogUiTest {
         compose.onNodeWithText("Tải thêm sản phẩm").performClick()
         compose.waitUntil(15000){vm.plans.catalog.state.value.items.size==24 && !vm.plans.catalog.state.value.loading}
         assertTrue(vm.plans.catalog.state.value.items.any {it.price==null})
-        val first=vm.plans.catalog.state.value.items.first()
+        val first=vm.plans.catalog.state.value.items.first {it.price!=null && it.freshness!="UNKNOWN"}
         list().performScrollToNode(hasText(first.product!!.name))
-        compose.onNodeWithText(first.product!!.name).performClick()
-        compose.waitUntil(15000){vm.plans.catalog.state.value.detail!=null}
-        picture("catalog-live-detail")
-        compose.onNodeWithText("Đóng chi tiết").performClick()
+        compose.onNodeWithContentDescription("Thêm ${first.product!!.name} vào giỏ hàng").performClick()
+        compose.waitUntil(15000){vm.plans.state.value.saved?.items?.size==1 && vm.plans.catalog.state.value.adding==null}
+        assertNull(vm.plans.catalog.state.value.error)
+        compose.onNodeWithContentDescription("Đã thêm ${first.product!!.name} vào danh sách").assertExists()
+        picture("catalog-live-added")
         list().performScrollToIndex(0)
         compose.onNode(hasSetTextAction()).performTextReplacement("Catalog Test 26")
         compose.onNode(hasSetTextAction()).performImeAction()
         compose.waitUntil(15000){!vm.plans.catalog.state.value.loading && vm.plans.catalog.state.value.items.isEmpty()}
         list().performScrollToNode(hasText("Chưa có sản phẩm phù hợp"))
         picture("catalog-live-empty-outside-retailer")
-        assertTrue(runBlocking {api.plan(access,created.plan.id)}.items.isEmpty())
+        assertEquals(first.product!!.id,runBlocking {api.plan(access,created.plan.id)}.items.single().productId)
         compose.runOnIdle {vm.plans.clear()};runBlocking {api.logout(store.saved!!.refreshToken)}
     }
 }

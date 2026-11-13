@@ -256,6 +256,51 @@ fun Application.authModule(service: AuthService, flows: AuthFlows? = null, catal
                 val result = withContext(Dispatchers.IO) { plans.patch(access, call.parameters["plan_id"]!!, call.request.headers["Idempotency-Key"], b) }
                 call.respond(Envelope(result.data, meta(call)))
             }
+            delete("/plans/{plan_id}") {
+                val p = call.request.queryParameters
+                if ((p.names() - setOf("expected_version")).isNotEmpty()) throw ApiFailure(400, "UNKNOWN_FIELD")
+                val access = bearer(call)
+                withContext(Dispatchers.IO) { plans.delete(access, call.parameters["plan_id"]!!, call.request.headers["Idempotency-Key"], p["expected_version"]) }
+                call.respond(HttpStatusCode.NoContent)
+            }
+            post("/plans/{plan_id}/items") {
+                val access = bearer(call)
+                val b = body(call, setOf("expected_version", "quantity"), setOf("offer_ref", "expected_offer_version", "custom_name", "unit", "priority"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { plans.addItem(access, call.parameters["plan_id"]!!, call.request.headers["Idempotency-Key"], b) }
+                call.respond(HttpStatusCode.Created, Envelope(result.data, meta(call)))
+            }
+            patch("/plans/{plan_id}/items/{item_id}") {
+                val access = bearer(call)
+                val b = body(call, setOf("expected_version"), setOf("quantity", "priority"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { plans.changeItem(access, call.parameters["plan_id"]!!, call.parameters["item_id"]!!, call.request.headers["Idempotency-Key"], b) }
+                call.respond(Envelope(result.data, meta(call)))
+            }
+            delete("/plans/{plan_id}/items/{item_id}") {
+                val p = call.request.queryParameters
+                if ((p.names() - setOf("expected_version", "confirm_essential")).isNotEmpty()) throw ApiFailure(400, "UNKNOWN_FIELD")
+                val access = bearer(call)
+                val result = withContext(Dispatchers.IO) { plans.removeItem(access, call.parameters["plan_id"]!!, call.parameters["item_id"]!!,
+                    call.request.headers["Idempotency-Key"], p["expected_version"], p["confirm_essential"]) }
+                call.respond(Envelope(result.data, meta(call)))
+            }
+            post("/plans/{plan_id}/finalization-reviews") {
+                val access = bearer(call)
+                val b = body(call, setOf("expected_version"), setOf("optimization_option_id"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { plans.review(access, call.parameters["plan_id"]!!, b) }
+                call.respond(HttpStatusCode.Created, Envelope(result, meta(call)))
+            }
+            post("/plans/{plan_id}/finalize") {
+                val access = bearer(call)
+                val b = body(call, setOf("expected_version", "review_id", "confirm_price_changes"), setOf("confirmed_essential_action_ids"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { plans.finalize(access, call.parameters["plan_id"]!!, call.request.headers["Idempotency-Key"], b) }
+                call.respond(Envelope(result.data, meta(call)))
+            }
+            post("/plans/{plan_id}/reopen") {
+                val access = bearer(call)
+                val b = body(call, setOf("expected_version"), stringsOnly = false)
+                val result = withContext(Dispatchers.IO) { plans.reopen(access, call.parameters["plan_id"]!!, call.request.headers["Idempotency-Key"], b) }
+                call.respond(Envelope(result.data, meta(call)))
+            }
             get("/plans/{plan_id}/catalog") {
                 val access = bearer(call)
                 val id = call.parameters["plan_id"]!!

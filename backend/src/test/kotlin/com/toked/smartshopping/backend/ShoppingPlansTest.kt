@@ -110,6 +110,8 @@ class ShoppingPlansTest {
         assertEquals("600000", plans.get(account.tokens.access_token, id).plan.budget)
         assertEquals(5, plans.get(account.tokens.access_token, id).plan.version)
         mutate { appendRevision(UUID.fromString(id), 5); plan(UUID.fromString(id)) }
+        failure("INVALID_STATE") { plans.delete(account.tokens.access_token, id, "delete-finalized", "6") }
+        failure("VALIDATION_ERROR") { plans.delete(account.tokens.access_token, id, "delete-bad-version", "x") }
         for (state in listOf("FINALIZED", "IN_PROGRESS", "COMPLETED", "CANCELLED", "EXPIRED", "LOADING_PRODUCTS")) {
             db.transaction { execute(it, "UPDATE shopping_plans SET status=? WHERE id=?", state, UUID.fromString(id)) }
             failure("INVALID_STATE") { patch(id, """{"expected_version":6,"budget":"700000"}""") }

@@ -204,6 +204,95 @@ class CatalogServiceTest {
         assertEquals("600000",after.plan.budget);assertEquals(before.items,after.items)
         assertEquals(CatalogStatus.FAILED,after.plan.catalog_status);assertNull(products.pending(token,planId))
     }
+    @Test fun branchPlanAddsChainOfferOverHttpAndDeleteRemovesUnfinalizedPlan(): Unit = runBlocking {
+        val store=StoreSnapshot("catalog-cart-branch",1,retailer,"Chi nhánh giỏ hàng",null,Coordinate(10.0,106.0),"TEST","PUBLIC")
+        db.transaction { c -> execute(c,"INSERT INTO shopping_stores(id,retailer_id,visibility,payload) VALUES (?,?,'PUBLIC',?::jsonb)",store.id,retailer,Json.encodeToString(store)) }
+        val branchPlan=auth.shoppingPlans().create(token,"branch-plan",obj("""{"budget":"500000","currency":"VND","selections":[{"store_id":"${store.id}"}],"category_ids":["$category"]}"""))
+            .data.jsonObject.getValue("plan").jsonObject.getValue("id").jsonPrimitive.content
+        val data=ShoppingData(db,auth,clock)
+        for ((version,state) in listOf(1 to CatalogStatus.LOADING,2 to CatalogStatus.READY))
+            data.mutate(token,MutationRequest("POST","/plans/$branchPlan/test","state-$version",JsonObject(emptyMap()))) { MutationResult(200,shoppingJson.encodeToJsonElement(catalogState(UUID.fromString(branchPlan),version,state))) }
+        val offer=products.catalog(token,branchPlan,CatalogFilter()).items.first { it.price!=null }
+        assertNull(offer.store_id)
+        testApplication {
+            application { authModule(auth,catalog=provider) }
+            suspend fun add(key: String,version: Int)=client.post("/api/v1/plans/$branchPlan/items") { bearerAuth(token);contentType(ContentType.Application.Json);header("Idempotency-Key",key)
+                setBody("""{"expected_version":$version,"quantity":"1","offer_ref":{"kind":"CATALOG","id":"${offer.ref.id}"},"expected_offer_version":"${offer.version}"}""") }
+            val added=add("cart-add",3)
+            assertEquals(HttpStatusCode.Created,added.status)
+            val view=Json.parseToJsonElement(added.bodyAsText()).jsonObject.getValue("data").jsonObject
+            assertEquals(offer.product!!.id,view.getValue("items").jsonArray.single().jsonObject.getValue("product_id").jsonPrimitive.content)
+            assertEquals(offer.price,view.getValue("plan").jsonObject.getValue("budget_summary").jsonObject.getValue("selected_total").jsonPrimitive.content)
+            assertEquals(HttpStatusCode.Conflict,add("cart-duplicate",4).status)
+            suspend fun delete(version: String,key: String)=client.delete("/api/v1/plans/$branchPlan?expected_version=$version") { bearerAuth(token);header("Idempotency-Key",key) }
+            assertEquals(HttpStatusCode.Conflict,delete("3","stale-delete").status)
+            assertEquals(HttpStatusCode.NoContent,delete("4","delete").status)
+            assertEquals(HttpStatusCode.NotFound,client.get("/api/v1/plans/$branchPlan") { bearerAuth(token) }.status)
+            assertEquals(HttpStatusCode.NotFound,delete("4","delete").status)
+        }
+        assertEquals(listOf(planId),auth.shoppingPlans().list(token,null,20,null).items.map { it.id })
+        db.transaction { c -> query(c,"SELECT count(*) FILTER (WHERE action='PLAN_DELETED'),count(*) FROM shopping_audit WHERE plan_id=?",UUID.fromString(branchPlan)).use { s -> s.executeQuery().use { r ->
+            r.next();assertEquals(1,r.getInt(1));assertTrue(r.getInt(2)>1,"earlier audit rows stay append-only")
+        } } }
+    }
+    @Test fun offerListedThroughSecondaryCategoryCanBeAdded(): Unit = runBlocking {
+        val base=item("multi")
+        provider.values=provider.values+base.copy(categories=listOf(ProviderCategory("pork","Thịt heo","https://one.example.test/pork",null))+base.categories)
+        CatalogImporter(db,provider,clock).sync()
+        products.refresh(products.ticket(refresh()))
+        val offer=products.catalog(token,planId,CatalogFilter(query="Mặt hàng multi")).items.single()
+        assertNotEquals(category,offer.product!!.category_id,"primary category is outside the Plan; it is listed via its second one")
+        fun add(key: String)=auth.shoppingPlans().addItem(token,planId,key,obj("""{"expected_version":${auth.shoppingPlans().get(token,planId).plan.version},"quantity":"1","offer_ref":{"kind":"CATALOG","id":"${offer.ref.id}"},"expected_offer_version":"${offer.version}"}"""))
+        assertEquals(201,add("multi-add").status)
+        // Without any overlapping entry category the same offer is outside the Plan context.
+        db.transaction { c ->
+            execute(c,"DELETE FROM shopping_items WHERE plan_id=?",UUID.fromString(planId))
+            execute(c,"UPDATE catalog_entries SET category_ids=ARRAY[?::text] WHERE offer_id=?",offer.product!!.category_id,offer.ref.id)
+        }
+        assertEquals("VALIDATION_ERROR",assertFailsWith<ApiFailure> { add("outside-add") }.code)
+    }
+    @Test fun listEditReviewFinalizeAndReopenOverHttp(): Unit = runBlocking {
+        products.refresh(products.ticket(refresh()))
+        val offer=products.catalog(token,planId,CatalogFilter()).items.first { it.price!=null }
+        testApplication {
+            application { authModule(auth,catalog=provider) }
+            suspend fun send(method: HttpMethod,path: String,body: String?=null)=client.request("/api/v1/plans/$planId$path") {
+                this.method=method;bearerAuth(token);header("Idempotency-Key",UUID.randomUUID().toString())
+                if(body!=null) { contentType(ContentType.Application.Json);setBody(body) }
+            }
+            suspend fun data(response: HttpResponse)=Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("data").jsonObject
+            suspend fun code(response: HttpResponse)=Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("error").jsonObject.getValue("code").jsonPrimitive.content
+            fun version(view: JsonObject)=view.getValue("plan").jsonObject.getValue("version").jsonPrimitive.int
+            var view=data(send(HttpMethod.Post,"/items","""{"expected_version":3,"quantity":"1","offer_ref":{"kind":"CATALOG","id":"${offer.ref.id}"},"expected_offer_version":"${offer.version}"}"""))
+            val itemId=view.getValue("items").jsonArray.single().jsonObject.getValue("id").jsonPrimitive.content
+            view=data(send(HttpMethod.Patch,"/items/$itemId","""{"expected_version":${version(view)},"quantity":"2","priority":"ESSENTIAL"}"""))
+            val item=view.getValue("items").jsonArray.single().jsonObject
+            assertEquals("2",item.getValue("quantity").jsonPrimitive.content);assertEquals("ESSENTIAL",item.getValue("priority").jsonPrimitive.content)
+            assertEquals(HttpStatusCode.UnprocessableEntity,send(HttpMethod.Patch,"/items/$itemId","""{"expected_version":${version(view)},"priority":"MAYBE"}""").status)
+            assertEquals("ESSENTIAL_CONFIRMATION_REQUIRED",code(send(HttpMethod.Delete,"/items/$itemId?expected_version=${version(view)}")))
+            // The catalog price moves after the item was added: review shows it, finalize needs explicit confirmation.
+            db.transaction { c -> execute(c,"UPDATE shopping_offers SET payload=jsonb_set(jsonb_set(payload,'{price}','\"15000\"'),'{version}','\"cf_price2_moved\"') WHERE kind='CATALOG' AND id=?",offer.ref.id) }
+            val reviewResponse=send(HttpMethod.Post,"/finalization-reviews","""{"expected_version":${version(view)}}""")
+            assertEquals(HttpStatusCode.Created,reviewResponse.status)
+            val review=data(reviewResponse)
+            assertEquals(listOf(itemId),review.getValue("price_changed_item_ids").jsonArray.map { it.jsonPrimitive.content })
+            assertEquals("30000",review.getValue("view").jsonObject.getValue("plan").jsonObject.getValue("budget_summary").jsonObject.getValue("selected_total").jsonPrimitive.content)
+            val reviewId=review.getValue("review_id").jsonPrimitive.content
+            assertEquals("PRICE_CONFIRMATION_REQUIRED",code(send(HttpMethod.Post,"/finalize","""{"expected_version":${version(view)},"review_id":"$reviewId","confirm_price_changes":false}""")))
+            assertEquals("PRICE_CHANGED",code(send(HttpMethod.Post,"/finalize","""{"expected_version":${version(view)},"review_id":"stale","confirm_price_changes":true}""")))
+            val finalized=data(send(HttpMethod.Post,"/finalize","""{"expected_version":${version(view)},"review_id":"$reviewId","confirm_price_changes":true}"""))
+            assertEquals(1,finalized.getValue("revision").jsonPrimitive.int)
+            assertEquals("FINALIZED",finalized.getValue("plan").jsonObject.getValue("status").jsonPrimitive.content)
+            view=data(client.get("/api/v1/plans/$planId") { bearerAuth(token) })
+            assertEquals("15000",view.getValue("items").jsonArray.single().jsonObject.getValue("selected_price_snapshot").jsonObject.getValue("price").jsonPrimitive.content)
+            assertEquals("INVALID_STATE",code(send(HttpMethod.Patch,"/items/$itemId","""{"expected_version":${version(view)},"quantity":"3"}""")))
+            view=data(send(HttpMethod.Post,"/reopen","""{"expected_version":${version(view)}}"""))
+            assertEquals("BUILDING_LIST",view.getValue("plan").jsonObject.getValue("status").jsonPrimitive.content)
+            view=data(send(HttpMethod.Delete,"/items/$itemId?expected_version=${version(view)}&confirm_essential=true"))
+            assertTrue(view.getValue("items").jsonArray.isEmpty())
+            assertEquals("EMPTY_LIST",code(send(HttpMethod.Post,"/finalization-reviews","""{"expected_version":${version(view)}}""")))
+        }
+    }
     @Test fun httpRoutesRequireAuthAndReturnCatalogContracts(): Unit = runBlocking {
         testApplication {
             application { authModule(auth,catalog=provider) }

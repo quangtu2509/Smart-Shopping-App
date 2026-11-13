@@ -13,6 +13,7 @@ interface CatalogGateway {
     suspend fun catalog(planId: String, filter: CatalogFilter, cursor: String?): CatalogPage = throw AuthFailure.Unconfigured()
     suspend fun refreshCatalog(planId: String, intent: CatalogRefreshIntent): ShoppingPlan = throw AuthFailure.Unconfigured()
     suspend fun productDetail(planId: String, productId: String): CatalogDetail = throw AuthFailure.Unconfigured()
+    suspend fun addItem(planId: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
 }
 
 object CatalogDecoders {

@@ -48,6 +48,25 @@ class PlanControllerTest {
             pages = listOf(saved.plan)
             return saved
         }
+        val deletes = mutableListOf<Pair<String, Int>>()
+        var deleteFailure: Exception? = null
+        override suspend fun deletePlan(id: String, version: Int) { deletes += id to version; deleteFailure?.let { throw it } }
+    }
+    @Test fun deleteAsksFirstSkipsFinalizedPlansAndTreatsGoneAsDeleted() = runTest {
+        val g = Gateway(); g.pages = listOf(samplePlan("a").plan, samplePlan("b", version = 4).plan, samplePlan("final").plan.copy(revision = 1))
+        val c = controller(g); c.home("owner")
+        c.onAction(PlanAction.Delete("final")); assertNull(c.state.value.confirmDelete)
+        c.onAction(PlanAction.Delete("b")); assertTrue(g.deletes.isEmpty())
+        c.onAction(PlanAction.CancelDelete); assertNull(c.state.value.confirmDelete); assertTrue(g.deletes.isEmpty())
+        c.onAction(PlanAction.Delete("b")); c.onAction(PlanAction.ConfirmDelete)
+        assertEquals(listOf("b" to 4), g.deletes); assertEquals(listOf("a", "final"), c.state.value.plans.map { it.id })
+        g.deleteFailure = AuthFailure.Http(404, "RESOURCE_NOT_FOUND", emptyMap(), null)
+        c.onAction(PlanAction.Delete("a")); c.onAction(PlanAction.ConfirmDelete)
+        assertEquals(listOf("final"), c.state.value.plans.map { it.id }); assertNull(c.state.value.plansError)
+        g.pages = listOf(samplePlan("c").plan); c.onAction(PlanAction.ReloadPlans)
+        g.deleteFailure = AuthFailure.Http(409, "VERSION_CONFLICT", emptyMap(), null)
+        c.onAction(PlanAction.Delete("c")); c.onAction(PlanAction.ConfirmDelete)
+        assertEquals(listOf("c"), c.state.value.plans.map { it.id }); assertNotNull(c.state.value.plansError)
     }
     private fun TestScope.controller(gateway: Gateway = Gateway(), ended: () -> Unit = {}) =
         PlanController(gateway, backgroundScope + UnconfinedTestDispatcher(testScheduler), ended)

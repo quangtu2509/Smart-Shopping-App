@@ -2,6 +2,9 @@ package com.toked.smartshopping.home
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -68,6 +71,26 @@ class HomeUiTest {
         compose.onNodeWithText("Xem kế hoạch ›").performScrollTo().performClick()
         assertEquals(PlanAction.Open("final"), opened.last())
         picture("home-plans.png")
+    }
+
+    @Test fun deleteOnlyOnUnfinalizedPlansAndAsksBeforeDeleting() {
+        val actions = mutableListOf<PlanAction>()
+        val zero = Money("VND", BigDecimal.ZERO); val budget = Money("VND", BigDecimal("300000"))
+        fun plan(id: String, revision: Int, status: PlanState) = ShoppingPlan(id, 2, revision, status, budget, listOf(Selection("r1", null)), listOf("c1"), 3,
+            BudgetSummary(budget, zero, budget, true, emptyList(), zero, emptyList()), "READY", "2026-11-11T00:00:00Z", "2026-11-11T00:00:00Z")
+        val draft = plan("draft", 0, PlanState.BROWSING_PRODUCTS)
+        var state by mutableStateOf(PlanUiState(plans = listOf(draft, plan("final", 1, PlanState.FINALIZED))))
+        compose.setContent { SmartShoppingTheme(darkTheme = false) {
+            HomeContent("owner@example.com", 3, "Cân bằng", {}, {}, {}, plans = state, onPlanAction = { actions += it })
+        } }
+        compose.onAllNodesWithText("Xóa").assertCountEquals(1)
+        compose.onNodeWithText("Xóa").performClick()
+        assertEquals(PlanAction.Delete("draft"), actions.last())
+        state = state.copy(confirmDelete = draft)
+        compose.onNodeWithText("Xóa kế hoạch?").assertIsDisplayed()
+        picture("home-delete-confirm.png")
+        compose.onNodeWithText("Hủy").performClick(); assertEquals(PlanAction.CancelDelete, actions.last())
+        compose.onNodeWithText("Xóa kế hoạch").performClick(); assertEquals(PlanAction.ConfirmDelete, actions.last())
     }
 
     @Test fun navigationAccountCallbacksAndLogoutConfirmation() {

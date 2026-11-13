@@ -99,6 +99,15 @@ class ShoppingWrite internal constructor(c: Connection, owner: UUID, private val
         return if (contextChanged) result.copy(warnings = result.warnings + ShoppingWarning("PLAN_CONTEXT_CHANGED",
             "Nơi mua hoặc nhóm hàng đã đổi. Cần tải lại catalog và kiểm tra các món đã chọn.", result.items.map { it.id })) else result
     }
+    /** Only never-finalized Plans: a revision means Session/History snapshots exist and stay immutable. Audit rows are kept (V11). */
+    fun deletePlan(id: UUID, expected: Int) {
+        val p = row(id); expect(p, expected)
+        if (p.revision > 0) throw ApiFailure(409, "INVALID_STATE")
+        for (table in listOf("shopping_artifacts", "shopping_items", "shopping_plan_categories", "shopping_plan_selections"))
+            execute(c, "DELETE FROM $table WHERE plan_id=?", id)
+        execute(c, "DELETE FROM shopping_plans WHERE id=? AND owner_id=?", id, owner)
+        audit(id, "PLAN_DELETED", p.version + 1)
+    }
     /** Catalog adapters will call this after their I/O has finished, never from inside a provider transaction. */
     fun queueCatalogRefresh(id: UUID, expected: Int): PlanView {
         val current = row(id); expect(current, expected)
@@ -140,11 +149,18 @@ class ShoppingWrite internal constructor(c: Connection, owner: UUID, private val
             if (offer.version != input.expected_offer_version) throw ApiFailure(409, "PRICE_CHANGED")
             if (offer.stock_status == StockStatus.OUT_OF_STOCK) throw ApiFailure(409, "OFFER_UNAVAILABLE")
             if (offer.currency != p.currency) invalid("currency", "CURRENCY_MISMATCH")
+            // A branch also accepts its chain's retailer-scoped offers; the catalog lists them with RETAILER_PRICE_NOT_STORE_CONFIRMED.
             val inContext = selections(id).any { selection ->
-                if (selection.store_id != null) selection.store_id == offer.store_id
+                if (selection.store_id != null) selection.store_id == offer.store_id || (offer.store_id == null && selection.retailer_id != null && selection.retailer_id == offer.retailer_id)
                 else selection.retailer_id != null && selection.retailer_id == offer.retailer_id
             }
-            if (!inContext || selected.category !in categories(id)) invalid("offer_ref", "OUTSIDE_PLAN_CONTEXT")
+            val planCategories = categories(id)
+            // Same rule as the catalog page: a CATALOG offer is in context when any of its entry categories overlaps the Plan,
+            // not only the product's first (primary) category.
+            val inCategory = selected.category in planCategories || (offer.ref.kind == OfferKind.CATALOG &&
+                query(c, "SELECT 1 FROM catalog_entries WHERE offer_id=? AND category_ids && ?::text[]", offer.ref.id, c.createArrayOf("text", planCategories.toTypedArray()))
+                    .use { s -> s.executeQuery().use { it.next() } })
+            if (!inContext || !inCategory) invalid("offer_ref", "OUTSIDE_PLAN_CONTEXT")
             if (offer.price != null) {
                 money.amount(offer.price, p.currency)
                 if (offer.source.isNullOrBlank() || offer.observed_at == null || offer.freshness == Freshness.UNKNOWN) throw ApiFailure(422, "OFFER_METADATA_INCOMPLETE")
@@ -204,6 +220,21 @@ class ShoppingWrite internal constructor(c: Connection, owner: UUID, private val
         execute(c, "UPDATE shopping_plans SET revision=?,current_finalized_revision=?,status='FINALIZED' WHERE id=?", finalized.revision, finalized.revision, id)
         execute(c, "INSERT INTO shopping_revision_validity(plan_id,revision,status) VALUES (?,?,'CURRENT')", id, finalized.revision)
         return snapshot
+    }
+    /** API-FINAL-02 for a direct List review (no optimization option). Totals come from the server, never the client. */
+    fun finalize(id: UUID, expected: Int, reviewId: String, confirmPriceChanges: Boolean): FinalizedPlan {
+        val p = row(id); expect(p, expected)
+        val state = reviewState(id, clock.instant())
+        if (state.review.review_id != reviewId) throw ApiFailure(409, "PRICE_CHANGED")
+        if (!state.review.can_finalize) throw ApiFailure(422, "STORE_LIMIT_EXCEEDED")
+        if (state.review.price_changed_item_ids.isNotEmpty() && !confirmPriceChanges) throw ApiFailure(409, "PRICE_CONFIRMATION_REQUIRED")
+        state.refreshed.forEach { (itemId, offer) ->
+            execute(c, "UPDATE shopping_items SET selected_price_snapshot=?::jsonb WHERE plan_id=? AND id=?", shoppingJson.encodeToString(offer), id, UUID.fromString(itemId))
+        }
+        val snapshot = appendRevision(id, expected)
+        val view = plan(id)
+        return FinalizedPlan(view.plan, snapshot.plan.revision, snapshot.finalized_at, snapshot.allocations,
+            snapshot.allocations.mapNotNull { it.price_snapshot }, view.plan.budget_summary, state.review.view.warnings)
     }
     fun reopen(id: UUID, expected: Int): PlanView {
         val p = row(id); expect(p, expected)

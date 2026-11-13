@@ -57,6 +57,13 @@ interface AuthGateway {
     suspend fun refreshCatalog(accessToken: String, planId: String, intent: CatalogRefreshIntent): ShoppingPlan = throw AuthFailure.Unconfigured()
     suspend fun productDetail(accessToken: String, planId: String, productId: String): CatalogDetail = throw AuthFailure.Unconfigured()
     suspend fun savePlan(accessToken: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun deletePlan(accessToken: String, id: String, version: Int): Unit = throw AuthFailure.Unconfigured()
+    suspend fun addItem(accessToken: String, planId: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun changeItem(accessToken: String, planId: String, itemId: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun removeItem(accessToken: String, planId: String, itemId: String, version: Int, confirmEssential: Boolean): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun reviewPlan(accessToken: String, planId: String, version: Int): FinalizationReview = throw AuthFailure.Unconfigured()
+    suspend fun finalizePlan(accessToken: String, planId: String, mutation: PlanMutation): Unit = throw AuthFailure.Unconfigured()
+    suspend fun reopenPlan(accessToken: String, planId: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
     suspend fun shoppingProfile(accessToken: String): ShoppingProfile = throw AuthFailure.Unconfigured()
     suspend fun saveShoppingProfile(accessToken: String, patch: ProfilePatch): ShoppingProfile = throw AuthFailure.Unconfigured()
     suspend fun references(accessToken: String, kind: String, cursor: String? = null): ReferencePage = throw AuthFailure.Unconfigured()
@@ -219,6 +226,24 @@ class AuthApi(baseUrl: String, allowLocalHttp: Boolean = false) : AuthGateway {
     override suspend fun savePlan(accessToken: String, mutation: PlanMutation): ShoppingPlanView = PlanDecoders.view(
         request("plans", if (mutation.planId == null) "POST" else "PATCH", mutation.body, accessToken,
             expected = if (mutation.planId == null) 201 else 200, segment = mutation.planId, idempotencyKey = mutation.key))
+    override suspend fun deletePlan(accessToken: String, id: String, version: Int) {
+        request("plans", "DELETE", accessToken = accessToken, expected = 204, segment = id,
+            idempotencyKey = java.util.UUID.randomUUID().toString(), query = mapOf("expected_version" to version.toString()))
+    }
+    override suspend fun addItem(accessToken: String, planId: String, mutation: PlanMutation): ShoppingPlanView = PlanDecoders.view(
+        request("plans", "POST", mutation.body, accessToken, expected = 201, segments = listOf(planId, "items"), idempotencyKey = mutation.key))
+    override suspend fun changeItem(accessToken: String, planId: String, itemId: String, mutation: PlanMutation): ShoppingPlanView = PlanDecoders.view(
+        request("plans", "PATCH", mutation.body, accessToken, segments = listOf(planId, "items", itemId), idempotencyKey = mutation.key))
+    override suspend fun removeItem(accessToken: String, planId: String, itemId: String, version: Int, confirmEssential: Boolean): ShoppingPlanView = PlanDecoders.view(
+        request("plans", "DELETE", accessToken = accessToken, segments = listOf(planId, "items", itemId), idempotencyKey = java.util.UUID.randomUUID().toString(),
+            query = mapOf("expected_version" to version.toString(), "confirm_essential" to if (confirmEssential) "true" else null)))
+    override suspend fun reviewPlan(accessToken: String, planId: String, version: Int): FinalizationReview = PlanDecoders.review(
+        request("plans", "POST", JSONObject().put("expected_version", version).toString(), accessToken, expected = 201, segments = listOf(planId, "finalization-reviews")))
+    override suspend fun finalizePlan(accessToken: String, planId: String, mutation: PlanMutation) {
+        request("plans", "POST", mutation.body, accessToken, segments = listOf(planId, "finalize"), idempotencyKey = mutation.key)
+    }
+    override suspend fun reopenPlan(accessToken: String, planId: String, mutation: PlanMutation): ShoppingPlanView = PlanDecoders.view(
+        request("plans", "POST", mutation.body, accessToken, segments = listOf(planId, "reopen"), idempotencyKey = mutation.key))
 
     override suspend fun catalog(accessToken: String, planId: String, filter: CatalogFilter, cursor: String?): CatalogPage = CatalogDecoders.page(
         request("plans",accessToken=accessToken,segments=listOf(planId,"catalog"),query=mapOf("retailer_id" to filter.retailer,"category_id" to filter.category,

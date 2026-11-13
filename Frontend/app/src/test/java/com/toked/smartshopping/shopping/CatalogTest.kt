@@ -12,11 +12,11 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.*
 
-internal fun catalogOffer(id: String="offer-1",price: String?="30000"): Offer {
+internal fun catalogOffer(id: String="offer-1",price: String?="30000",listPrice: String?=null): Offer {
     val raw=Thread.currentThread().contextClassLoader!!.getResource("shopping/plan-view.json")!!.readText()
     val offer=JSONObject(raw).getJSONArray("items").getJSONObject(0).getJSONObject("selected_price_snapshot")
     offer.getJSONObject("ref").put("id",id)
-    offer.put("price",price ?: JSONObject.NULL)
+    offer.put("price",price ?: JSONObject.NULL).put("list_price",listPrice ?: JSONObject.NULL)
     return ShoppingContracts.offer(offer)
 }
 
@@ -34,7 +34,11 @@ class CatalogControllerTest {
         override suspend fun refreshCatalog(planId: String,intent: CatalogRefreshIntent): ShoppingPlan {
             refreshes+=intent;refreshFailure?.let {throw it};view=view.copy(plan=view.plan.copy(version=view.plan.version+1));return view.plan
         }
-        override suspend fun productDetail(planId: String,productId: String)=CatalogDetail(catalogOffer().product!!,listOf(catalogOffer()),emptyList())
+        val adds=mutableListOf<PlanMutation>()
+        var addFailure: Exception?=null
+        override suspend fun addItem(planId: String,mutation: PlanMutation): ShoppingPlanView {
+            adds+=mutation;addFailure?.let {throw it};view=view.copy(plan=view.plan.copy(version=view.plan.version+1));return view
+        }
         override suspend fun planMaxStores()=3
         override suspend fun planReferences(kind: String,cursor: String?)=PlanReferencePage(emptyList(),null)
         override suspend fun planStores(retailerId: String?,query: String,cursor: String?)=PlanStorePage(emptyList(),null,emptyList(),emptyList())
@@ -88,8 +92,26 @@ class CatalogControllerTest {
         val c=controller(g);c.open(g.view);assertNull(c.state.value.items.single().price)
         c.onAction(CatalogAction.Refresh);assertTrue(g.refreshes.isEmpty())
         advanceTimeBy(3100);assertEquals(0,c.state.value.retrySeconds)
-        c.onAction(CatalogAction.Details(g.page.items.single().product!!.id));assertNotNull(c.state.value.detail)
-        c.onAction(CatalogAction.CloseDetails);assertNull(c.state.value.selectedProduct)
+    }
+    @Test fun addSendsOfferVersionAndUpdatesPlanAndDuplicateIsOnlyANotice()=runTest {
+        val g=Gateway();val c=controller(g);c.open(g.view);val offer=g.page.items.single()
+        c.onAction(CatalogAction.Add(offer))
+        val body=JSONObject(g.adds.single().body)
+        assertEquals(1,body.getInt("expected_version"));assertEquals(offer.product!!.quantityStep.value,body.getString("quantity"))
+        assertEquals(offer.ref.id,body.getJSONObject("offer_ref").getString("id"));assertEquals(offer.version,body.getString("expected_offer_version"))
+        assertEquals(2,c.state.value.plan!!.plan.version);assertNull(c.state.value.adding);assertNull(c.state.value.error)
+        g.addFailure=AuthFailure.Http(409,"DUPLICATE_ITEM",emptyMap(),null);c.onAction(CatalogAction.Add(offer))
+        assertEquals("Sản phẩm này đã có trong danh sách.",c.state.value.message);assertNull(c.state.value.error)
+        g.addFailure=AuthFailure.Http(409,"PRICE_CHANGED",emptyMap(),null);c.onAction(CatalogAction.Add(offer))
+        assertNotNull(c.state.value.error);assertNull(c.state.value.adding)
+    }
+    @Test fun salePercentNeedsBothKnownPricesAndARealDiscount() {
+        assertEquals(20,salePercent(catalogOffer(price="80000",listPrice="100000")))
+        assertEquals(33,salePercent(catalogOffer(price="20000",listPrice="30000")))
+        assertNull(salePercent(catalogOffer(price="30000",listPrice="30000")))
+        assertNull(salePercent(catalogOffer(price=null,listPrice="30000")))
+        assertNull(salePercent(catalogOffer(price="30000")))
+        assertNull(salePercent(catalogOffer(price="99999",listPrice="100000")))
     }
 }
 
@@ -113,6 +135,37 @@ class CatalogApiTest {
         server.enqueue(MockResponse().setBody(data(JSONObject().put("product",offer.getJSONObject("product")).put("offers",JSONArray().put(offer)).put("warnings",JSONArray()))))
         api.productDetail("access","plan/id","product/id")
         val detail=server.takeRequest();assertEquals("/api/v1/products/product%2Fid",detail.requestUrl!!.encodedPath);assertEquals("plan/id",detail.requestUrl!!.queryParameter("plan_id"))
+    }
+    @Test fun addItemAndDeletePlanUseListAndPlanRoutes()=runTest {
+        server.enqueue(MockResponse().setResponseCode(201).setBody(data(fixture())))
+        api().addItem("access","p",PlanMutation("add-key","{\"expected_version\":3}","p"))
+        val add=server.takeRequest()
+        assertEquals("POST",add.method);assertEquals("/api/v1/plans/p/items",add.requestUrl!!.encodedPath);assertEquals("add-key",add.getHeader("Idempotency-Key"))
+        server.enqueue(MockResponse().setResponseCode(204))
+        api().deletePlan("access","p",4)
+        val delete=server.takeRequest()
+        assertEquals("DELETE",delete.method);assertEquals("/api/v1/plans/p",delete.requestUrl!!.encodedPath)
+        assertEquals("4",delete.requestUrl!!.queryParameter("expected_version"));assertNotNull(delete.getHeader("Idempotency-Key"))
+    }
+    @Test fun listReviewAndFinalizeUseTheirRoutes()=runTest {
+        val api=api();val view=fixture();val version=view.getJSONObject("plan").getInt("version")
+        server.enqueue(MockResponse().setBody(data(view)))
+        api.changeItem("access","p","i/1",PlanMutation("change-key","{\"expected_version\":2,\"quantity\":\"2\"}","p"))
+        server.takeRequest().let { assertEquals("PATCH",it.method);assertEquals("/api/v1/plans/p/items/i%2F1",it.requestUrl!!.encodedPath);assertEquals("change-key",it.getHeader("Idempotency-Key")) }
+        server.enqueue(MockResponse().setBody(data(view)))
+        api.removeItem("access","p","i1",2,true)
+        server.takeRequest().let { assertEquals("DELETE",it.method);assertEquals("true",it.requestUrl!!.queryParameter("confirm_essential"));assertEquals("2",it.requestUrl!!.queryParameter("expected_version")) }
+        server.enqueue(MockResponse().setResponseCode(201).setBody(data(JSONObject().put("review_id","r1").put("plan_version",version).put("view",view)
+            .put("price_changed_item_ids",JSONArray()).put("store_count",1).put("can_finalize",true))))
+        val review=api.reviewPlan("access","p",version)
+        assertEquals("r1",review.id);assertTrue(review.canFinalize);assertEquals(view.getJSONArray("items").length(),review.view.items.size)
+        server.takeRequest().let { assertEquals("/api/v1/plans/p/finalization-reviews",it.requestUrl!!.encodedPath);assertEquals(version,JSONObject(it.body.readUtf8()).getInt("expected_version")) }
+        server.enqueue(MockResponse().setBody(data(JSONObject().put("revision",1))))
+        api.finalizePlan("access","p",PlanMutation("final-key","{}","p"))
+        server.takeRequest().let { assertEquals("/api/v1/plans/p/finalize",it.requestUrl!!.encodedPath);assertEquals("final-key",it.getHeader("Idempotency-Key")) }
+        server.enqueue(MockResponse().setResponseCode(201).setBody(data(JSONObject().put("review_id","r2").put("plan_version",version+1).put("view",view)
+            .put("price_changed_item_ids",JSONArray()).put("store_count",1).put("can_finalize",true))))
+        try { api.reviewPlan("access","p",version);fail("plan_version must match the reviewed view") } catch(_:AuthFailure.InvalidResponse){}
     }
     @Test fun refreshKeepsBodyAndIdempotencyKey()=runTest {
         server.enqueue(MockResponse().setResponseCode(202).setBody(data(JSONObject().put("plan",fixture().getJSONObject("plan")).put("catalog_status","LOADING"))))

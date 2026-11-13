@@ -25,7 +25,17 @@ interface PlanGateway : CatalogGateway {
     suspend fun plans(cursor: String?): PlanPage
     suspend fun plan(id: String): ShoppingPlanView
     suspend fun savePlan(mutation: PlanMutation): ShoppingPlanView
+    suspend fun deletePlan(id: String, version: Int): Unit = throw AuthFailure.Unconfigured()
+    suspend fun changeItem(planId: String, itemId: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun removeItem(planId: String, itemId: String, version: Int, confirmEssential: Boolean): ShoppingPlanView = throw AuthFailure.Unconfigured()
+    suspend fun reviewPlan(planId: String, version: Int): FinalizationReview = throw AuthFailure.Unconfigured()
+    suspend fun finalizePlan(planId: String, mutation: PlanMutation): Unit = throw AuthFailure.Unconfigured()
+    suspend fun reopenPlan(planId: String, mutation: PlanMutation): ShoppingPlanView = throw AuthFailure.Unconfigured()
 }
+
+/** API-FINAL-01: `view` holds the items and server totals with current catalog prices applied. */
+data class FinalizationReview(val id: String, val planVersion: Int, val view: ShoppingPlanView, val priceChangedItemIds: List<String>,
+    val storeCount: Int, val canFinalize: Boolean)
 
 data class PlanDraft(val budget: String = "", val currency: String = "VND", val selections: List<Selection> = emptyList(),
     val categoryIds: List<String> = emptyList()) {
@@ -73,6 +83,13 @@ internal object PlanDecoders {
         PlanPage((0 until a.length()).map { ShoppingContracts.decodePlan(a.getJSONObject(it).toString()) }, cursor(d))
     }
     fun view(raw: String): ShoppingPlanView = decode { ShoppingContracts.decodePlanView(data(raw).toString()) }
+    fun review(raw: String): FinalizationReview = decode {
+        val d = data(raw); val changed = d.getJSONArray("price_changed_item_ids")
+        val view = ShoppingContracts.decodePlanView(d.getJSONObject("view").toString())
+        FinalizationReview(d.getString("review_id").also { require(it.isNotBlank()) }, d.getInt("plan_version").also { require(it == view.plan.version) }, view,
+            (0 until changed.length()).map(changed::getString).also { ids -> require(ids.all { id -> view.items.any { it.id == id } }) },
+            d.getInt("store_count").also { require(it >= 0) }, d.getBoolean("can_finalize"))
+    }
     fun store(raw: String): PlanStore = decode { storeObject(data(raw)) }
     private fun storeObject(s: JSONObject) = PlanStore(s.getString("id"), if (s.isNull("retailer_id")) null else s.getString("retailer_id"),
         s.getString("name"), if (s.isNull("address")) null else s.getString("address"), s.getString("visibility") == "PRIVATE")

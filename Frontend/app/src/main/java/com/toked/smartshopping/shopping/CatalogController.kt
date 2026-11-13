@@ -14,7 +14,8 @@ data class CatalogUiState(
     val retailers: List<RetailerCatalogResult> = emptyList(), val warnings: List<ShoppingWarning> = emptyList(),
     val loading: Boolean = false, val refreshing: Boolean = false, val error: String? = null, val message: String? = null,
     val pending: CatalogRefreshIntent? = null, val retrySeconds: Int = 0,
-    val selectedProduct: String? = null, val detail: CatalogDetail? = null, val detailLoading: Boolean = false, val detailError: String? = null,
+    /** Offer whose add-to-list request is in flight; one at a time because each add advances the Plan version. */
+    val adding: OfferRef? = null,
     val filtersOpen: Boolean = false, val brands: List<PlanReference> = emptyList(), val brandCursor: String? = null, val brandsLoading: Boolean = false,
 )
 sealed interface CatalogAction {
@@ -27,8 +28,7 @@ sealed interface CatalogAction {
     data object Reload: CatalogAction
     data object More: CatalogAction
     data object Refresh: CatalogAction
-    data class Details(val id: String): CatalogAction
-    data object CloseDetails: CatalogAction
+    data class Add(val offer: Offer): CatalogAction
     data class Filters(val open: Boolean): CatalogAction
     data object MoreBrands: CatalogAction
 }
@@ -38,16 +38,18 @@ class CatalogController(private val gateway: PlanGateway, private val scope: Cor
     private val onPlan: (ShoppingPlanView)->Unit, private val onSessionEnded: ()->Unit) {
     private val mutable=MutableStateFlow(CatalogUiState())
     val state=mutable.asStateFlow()
-    private var loadJob: Job?=null;private var detailJob: Job?=null;private var timerJob: Job?=null;private var brandJob: Job?=null
+    private var loadJob: Job?=null;private var addJob: Job?=null;private var timerJob: Job?=null;private var brandJob: Job?=null
     private val seenCursors=mutableSetOf<String>()
     fun clear() { close();mutable.value=CatalogUiState() }
-    fun close() { loadJob?.cancel();detailJob?.cancel();timerJob?.cancel();brandJob?.cancel();seenCursors.clear() }
+    fun close() { loadJob?.cancel();addJob?.cancel();timerJob?.cancel();brandJob?.cancel();seenCursors.clear() }
     fun open(view: ShoppingPlanView) {
         close()
         val filter=state.value.takeIf { it.plan?.plan?.id==view.plan.id }?.filter ?: CatalogFilter()
         mutable.value=CatalogUiState(plan=view,filter=filter,search=filter.query)
         load(bootstrap=true)
     }
+    /** Keeps "đã thêm" marks and the budget bar in step with edits made on the selected list. */
+    fun sync(view: ShoppingPlanView) { mutable.update { if(it.plan?.plan?.id==view.plan.id) it.copy(plan=view) else it } }
     fun onAction(action: CatalogAction) {
         when(action) {
             is CatalogAction.Query -> mutable.update { it.copy(search=action.value.take(200)) }
@@ -59,8 +61,7 @@ class CatalogController(private val gateway: PlanGateway, private val scope: Cor
             CatalogAction.Reload -> load()
             CatalogAction.More -> load(more=true)
             CatalogAction.Refresh -> refresh()
-            is CatalogAction.Details -> details(action.id)
-            CatalogAction.CloseDetails -> { detailJob?.cancel();mutable.update { it.copy(selectedProduct=null,detail=null,detailLoading=false,detailError=null) } }
+            is CatalogAction.Add -> add(action.offer)
             is CatalogAction.Filters -> { mutable.update { it.copy(filtersOpen=action.open) };if(action.open && state.value.brands.isEmpty()) brands(false) }
             CatalogAction.MoreBrands -> brands(true)
         }
@@ -144,15 +145,30 @@ class CatalogController(private val gateway: PlanGateway, private val scope: Cor
         if(failure is AuthFailure.Http && failure.status==429) countdown(failure.retryAfter?.coerceIn(1,3600) ?: 1)
         mutable.update { it.copy(error=if(more) "Chưa tải được trang tiếp theo. Các sản phẩm đã tải được giữ lại." else "Chưa tải được danh sách sản phẩm. Kiểm tra kết nối và thử lại.") }
     }
-    private fun details(id: String) {
-        val planId=state.value.plan?.plan?.id ?: return
-        detailJob?.cancel();mutable.update { it.copy(selectedProduct=id,detail=null,detailLoading=true,detailError=null) }
-        detailJob=scope.launch {
+    /** API-LIST-02: one listed unit of the Offer; the server recomputes totals and rejects stale versions. */
+    private fun add(offer: Offer) {
+        val s=state.value;val plan=s.plan?.plan ?: return
+        if(s.adding!=null || s.refreshing) return
+        val body=JSONObject().put("expected_version",plan.version).put("quantity",offer.product?.quantityStep?.value ?: "1")
+            .put("offer_ref",JSONObject().put("kind",offer.ref.kind).put("id",offer.ref.id)).put("expected_offer_version",offer.version).toString()
+        mutable.update { it.copy(adding=offer.ref,error=null,message=null) }
+        addJob=scope.launch {
             try {
-                val detail=gateway.productDetail(planId,id);currentCoroutineContext().ensureActive()
-                mutable.update { it.copy(detail=detail,detailLoading=false) }
+                val view=gateway.addItem(plan.id,PlanMutation(UUID.randomUUID().toString(),body,plan.id));currentCoroutineContext().ensureActive()
+                updatePlan(view);mutable.update { it.copy(adding=null,message="Đã thêm ${offer.product?.name ?: "sản phẩm"} vào danh sách.") }
             } catch(cancelled: CancellationException) { throw cancelled }
-            catch(failure: Exception) { if(failure is AuthFailure.SessionEnded) { clear();onSessionEnded() } else mutable.update { it.copy(detailLoading=false,detailError="Chưa mở được chi tiết. Hãy thử lại.") } }
+            catch(failure: Exception) {
+                if(failure is AuthFailure.SessionEnded) { clear();onSessionEnded();return@launch }
+                val code=(failure as? AuthFailure.Http)?.code
+                mutable.update { it.copy(adding=null,message=if(code=="DUPLICATE_ITEM") "Sản phẩm này đã có trong danh sách." else null,error=when(code) {
+                    "DUPLICATE_ITEM" -> null
+                    "PRICE_CHANGED","VERSION_CONFLICT" -> "Giá hoặc kế hoạch vừa thay đổi. Tải lại danh sách rồi thêm lại."
+                    "INVALID_STATE" -> "Kế hoạch chưa sẵn sàng để thêm món. Hãy cập nhật sản phẩm rồi thử lại."
+                    "OFFER_UNAVAILABLE" -> "Sản phẩm hiện không còn hàng."
+                    else -> if(failure is AuthFailure.Http) "Máy chủ chưa nhận sản phẩm này (${failure.status} ${failure.code}${failure.fields.values.firstOrNull()?.let { c -> " · $c" }.orEmpty()})."
+                        else "Chưa thêm được sản phẩm. Kiểm tra kết nối và thử lại."
+                }) }
+            }
         }
     }
     private fun countdown(seconds: Int) {

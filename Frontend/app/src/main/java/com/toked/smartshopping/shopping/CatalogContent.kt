@@ -22,18 +22,18 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.toked.smartshopping.R
 import java.math.BigDecimal
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import java.math.RoundingMode
 
 @Composable
 fun CatalogContent(state: CatalogUiState, references: PlanUiState, onAction: (CatalogAction)->Unit, onBack: ()->Unit,
-    modifier: Modifier=Modifier, imageContent: @Composable (Offer,Modifier)->Unit = { offer,imageModifier -> CatalogImage(offer,imageModifier) }) {
+    modifier: Modifier=Modifier, imageContent: @Composable (Offer,Modifier)->Unit = { offer,imageModifier -> CatalogImage(offer,imageModifier) },
+    onOpenList: ()->Unit = {}) {
     BackHandler(onBack=onBack)
     val colors=MaterialTheme.colorScheme
     val plan=state.plan?.plan
@@ -117,33 +117,31 @@ fun CatalogContent(state: CatalogUiState, references: PlanUiState, onAction: (Ca
                             Text("${offers.size} sản phẩm đã tải · $scopeLabel",style=MaterialTheme.typography.bodySmall,color=colors.onSurfaceVariant)
                         }
                     }
-                    items(offers,key={"${it.ref.kind}:${it.ref.id}"}) { offer -> ProductCard(offer,{offer.product?.id?.let {onAction(CatalogAction.Details(it))}},imageContent) }
+                    items(offers,key={"${it.ref.kind}:${it.ref.id}"}) { offer ->
+                        val added=offer.product?.id?.let { id -> state.plan?.items?.any {it.productId==id} }==true
+                        ProductCard(offer,added,state.adding==offer.ref,state.adding==null && !state.refreshing,{onAction(CatalogAction.Add(offer))},imageContent)
+                    }
                 }
                 state.retailers.filter {it.status in setOf("FAILED","EMPTY")}.forEach {r -> item(key="source-${r.id}") {
                     CatalogNotice("${retailerName(r.id,references)}: ${if(r.status=="EMPTY") "chưa có sản phẩm phù hợp" else "chưa cập nhật được dữ liệu"}.")
                 } }
                 if(state.nextCursor!=null) item { OutlinedButton({onAction(CatalogAction.More)},Modifier.fillMaxWidth(),enabled=!state.loading && !state.refreshing) { Text("Tải thêm sản phẩm") } }
             }
-        }
-    }
-    if(state.selectedProduct!=null) AlertDialog(onDismissRequest={onAction(CatalogAction.CloseDetails)},
-        title={Text(state.detail?.product?.name ?: "Chi tiết sản phẩm")},text={
-            Column(Modifier.fillMaxWidth().heightIn(max=460.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                if(state.detailLoading) CircularProgressIndicator()
-                state.detailError?.let {Text(it);TextButton({onAction(CatalogAction.Details(state.selectedProduct))}) {Text("Thử lại chi tiết")} }
-                state.detail?.offers?.forEach {offer ->
-                    Text(catalogPrice(offer),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
-                    offer.product?.brandName?.let {Text("Thương hiệu: $it")}
-                    Text("Quy cách: ${offer.product?.packageLabel ?: offer.product?.unit.orEmpty()}")
-                    Text(if(offer.warnings.any {it.code=="STORE_PRICE_SCOPE_UNVERIFIED"}) "Phạm vi áp dụng giá chưa được xác minh từ dữ liệu cửa hàng." else "Giá theo chuỗi, chưa xác nhận tại chi nhánh.")
-                    Text("Tồn kho: Chưa xác nhận")
-                    Text("Nguồn: ${offer.source ?: "Chưa xác định"}",style=MaterialTheme.typography.bodySmall)
-                    Text("Ghi nhận: ${catalogObserved(offer.observedAt)}",style=MaterialTheme.typography.bodySmall)
-                    Text(freshnessLabel(offer.freshness),color=colors.onSurfaceVariant)
-                    offer.warnings.forEach {Text(it.message,style=MaterialTheme.typography.bodySmall)}
+            val items=state.plan?.items.orEmpty()
+            if(plan!=null && items.isNotEmpty()) Surface(shadowElevation=3.dp,color=colors.surface) {
+                Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${items.size} món đã chọn",style=MaterialTheme.typography.labelLarge)
+                        Text(planMoney(plan.budgetSummary.selectedTotal.amount.toPlainString(),plan.budget.currency)+if(plan.budgetSummary.complete) "" else " · thiếu giá",
+                            style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,color=if(plan.budgetSummary.remainingBudget.amount.signum()<0) colors.error else colors.primary)
+                    }
+                    Button(onOpenList,shape=RoundedCornerShape(14.dp)) {
+                        Text("Xem danh sách");Spacer(Modifier.width(6.dp));Icon(painterResource(R.drawable.ic_auth_arrow_forward),null,Modifier.size(18.dp))
+                    }
                 }
             }
-        },confirmButton={TextButton({onAction(CatalogAction.CloseDetails)}) {Text("Đóng chi tiết")} })
+        }
+    }
     if(state.filtersOpen) AlertDialog(onDismissRequest={onAction(CatalogAction.Filters(false))},title={Text("Bộ lọc sản phẩm")},text={
         Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("Sắp xếp",style=MaterialTheme.typography.titleMedium)
@@ -157,20 +155,40 @@ fun CatalogContent(state: CatalogUiState, references: PlanUiState, onAction: (Ca
     },confirmButton={TextButton({onAction(CatalogAction.Filters(false))}) {Text("Xong")} })
 }
 
-@Composable private fun ProductCard(offer: Offer,onClick: ()->Unit,imageContent: @Composable (Offer,Modifier)->Unit) {
+@Composable private fun ProductCard(offer: Offer,added: Boolean,adding: Boolean,enabled: Boolean,onAdd: ()->Unit,imageContent: @Composable (Offer,Modifier)->Unit) {
     val colors=MaterialTheme.colorScheme
-    Surface(onClick=onClick,shape=RoundedCornerShape(16.dp),color=colors.surfaceContainerLowest) {
+    val name=offer.product?.name ?: "Sản phẩm"
+    Surface(shape=RoundedCornerShape(16.dp),color=colors.surfaceContainerLowest) {
         Row(Modifier.fillMaxWidth().padding(14.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
             imageContent(offer,Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)))
             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                Text(offer.product?.name ?: "Sản phẩm",style=MaterialTheme.typography.titleSmall,maxLines=3,overflow=TextOverflow.Ellipsis)
+                Text(name,style=MaterialTheme.typography.titleSmall,maxLines=3,overflow=TextOverflow.Ellipsis)
                 Text(listOfNotNull(offer.product?.brandName,offer.product?.packageLabel ?: offer.product?.unit).joinToString(" · "),style=MaterialTheme.typography.bodySmall,color=colors.onSurfaceVariant,maxLines=2,overflow=TextOverflow.Ellipsis)
-                Text(catalogPrice(offer),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,color=if(offer.price==null) colors.onSurfaceVariant else colors.primary)
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                    Text(catalogPrice(offer),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold,color=if(offer.price==null) colors.onSurfaceVariant else colors.primary)
+                    salePercent(offer)?.let { percent ->
+                        Text(planMoney(offer.listPrice!!.amount.toPlainString(),offer.listPrice.currency),style=MaterialTheme.typography.bodySmall,
+                            color=colors.onSurfaceVariant,textDecoration=TextDecoration.LineThrough)
+                        Surface(shape=RoundedCornerShape(6.dp),color=colors.errorContainer) {
+                            Text("-$percent%",Modifier.padding(horizontal=6.dp,vertical=2.dp),style=MaterialTheme.typography.labelSmall,fontWeight=FontWeight.Bold,color=colors.onErrorContainer)
+                        }
+                    }
+                }
                 Text(freshnessLabel(offer.freshness),style=MaterialTheme.typography.labelSmall,color=colors.onSurfaceVariant)
             }
-            Icon(painterResource(R.drawable.ic_auth_arrow_forward),"Xem chi tiết",Modifier.size(20.dp),tint=colors.primary)
+            when {
+                adding -> CircularProgressIndicator(Modifier.padding(12.dp).size(24.dp))
+                added -> Icon(painterResource(R.drawable.ic_auth_check),"Đã thêm $name vào danh sách",Modifier.padding(12.dp).size(24.dp),tint=colors.primary)
+                else -> FilledTonalIconButton(onAdd,enabled=enabled) { Icon(painterResource(R.drawable.ic_cart_add),"Thêm $name vào giỏ hàng",Modifier.size(22.dp)) }
+            }
         }
     }
+}
+/** Discount from the provider's list price; shown only when both prices are known and the sale is at least 1%. */
+internal fun salePercent(offer: Offer): Int? {
+    val price=offer.price?.amount ?: return null;val list=offer.listPrice?.amount ?: return null
+    if(list.signum()<=0 || list<=price || offer.listPrice.currency!=offer.price.currency) return null
+    return list.subtract(price).multiply(BigDecimal(100)).divide(list,0,RoundingMode.HALF_UP).toInt().takeIf {it>0}
 }
 @Composable private fun CatalogImage(offer: Offer,modifier: Modifier) {
     Box(modifier.background(MaterialTheme.colorScheme.surfaceContainerLow),contentAlignment=Alignment.Center) {
@@ -189,4 +207,3 @@ private fun retailerName(id: String?,references: PlanUiState)=references.retaile
 private fun sortLabel(sort: String)=when(sort) {"PRICE_ASC"->"Giá tăng dần";"PRICE_DESC"->"Giá giảm dần";else->"Phù hợp nhất"}
 private fun freshnessLabel(value: String)=when(value) {"FRESH"->"Có thời điểm ghi nhận";"STALE"->"Giá đã cũ · kiểm tra lại";"EXPIRED"->"Giá hết hiệu lực";else->"Chưa xác định độ mới"}
 private fun catalogPrice(offer: Offer)=offer.price?.let {planMoney(it.amount.toPlainString(),it.currency)} ?: "Chưa xác nhận giá"
-private fun catalogObserved(value: String?): String=try {if(value==null) "Chưa xác định" else DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault()).format(Instant.parse(value))} catch(_:Exception) {"Chưa xác định"}

@@ -46,13 +46,67 @@ class ShoppingPlans(db: Database, auth: AuthService) {
     fun patch(access: String, id: String, key: String?, body: JsonObject): MutationResult = data.mutate(access,
         MutationRequest("PATCH", "/plans/$id", key.orEmpty(), body)) {
         allowed(body, setOf("expected_version"), setOf("budget", "selections", "category_ids"))
-        val expected = body["expected_version"] as? JsonPrimitive ?: invalid("expected_version", "INVALID_INTEGER")
-        val version = if (!expected.isString) expected.intOrNull else null
-        if (version == null || version <= 0) invalid("expected_version", "INVALID_INTEGER")
-        val result = updatePlan(parseId(id), version, if ("budget" in body) string(body["budget"], "budget") else null,
+        val result = updatePlan(parseId(id), version(body), if ("budget" in body) string(body["budget"], "budget") else null,
             if ("selections" in body) selections(body["selections"]) else null,
             if ("category_ids" in body) ids(body["category_ids"]) else null)
         MutationResult(200, shoppingJson.encodeToJsonElement(result))
+    }
+    /** API-PLAN-05. A retry after success sees 404: the Plan no longer exists for its owner. */
+    fun delete(access: String, id: String, key: String?, expected: String?): MutationResult = data.mutate(access,
+        MutationRequest("DELETE", "/plans/$id", key.orEmpty(), JsonNull, buildJsonObject { put("expected_version", expected) })) {
+        deletePlan(parseId(id), expected?.toIntOrNull()?.takeIf { it > 0 } ?: invalid("expected_version", "INVALID_INTEGER"))
+        MutationResult(204)
+    }
+    /** API-LIST-02. */
+    fun addItem(access: String, id: String, key: String?, body: JsonObject): MutationResult = data.mutate(access,
+        MutationRequest("POST", "/plans/$id/items", key.orEmpty(), body)) {
+        allowed(body, setOf("expected_version", "quantity"), setOf("offer_ref", "expected_offer_version", "custom_name", "unit", "priority"))
+        val input = try { shoppingJson.decodeFromJsonElement<ItemInput>(JsonObject(body - "expected_version")) }
+            catch (_: IllegalArgumentException) { invalid("item", "INVALID_ITEM") }
+        MutationResult(201, shoppingJson.encodeToJsonElement(addItem(parseId(id), version(body), input)))
+    }
+    /** API-LIST-03. */
+    fun changeItem(access: String, id: String, itemId: String, key: String?, body: JsonObject): MutationResult = data.mutate(access,
+        MutationRequest("PATCH", "/plans/$id/items/$itemId", key.orEmpty(), body)) {
+        allowed(body, setOf("expected_version"), setOf("quantity", "priority"))
+        val priority = body["priority"]?.let { value -> string(value, "priority").let { p -> Priority.entries.firstOrNull { it.name == p } ?: invalid("priority", "INVALID_ENUM") } }
+        MutationResult(200, shoppingJson.encodeToJsonElement(changeItem(parseId(id), parseId(itemId), version(body),
+            body["quantity"]?.let { string(it, "quantity") }, priority)))
+    }
+    /** API-LIST-04. Essential items need confirm_essential=true. */
+    fun removeItem(access: String, id: String, itemId: String, key: String?, expected: String?, confirmEssential: String?): MutationResult = data.mutate(access,
+        MutationRequest("DELETE", "/plans/$id/items/$itemId", key.orEmpty(), JsonNull,
+            buildJsonObject { put("expected_version", expected); put("confirm_essential", confirmEssential) })) {
+        if (confirmEssential !in setOf(null, "true", "false")) invalid("confirm_essential", "INVALID_BOOLEAN")
+        MutationResult(200, shoppingJson.encodeToJsonElement(removeItem(parseId(id), parseId(itemId),
+            expected?.toIntOrNull()?.takeIf { it > 0 } ?: invalid("expected_version", "INVALID_INTEGER"), confirmEssential == "true")))
+    }
+    /** API-FINAL-01 for the current List; optimization options are not available yet. Reads only, so no idempotency record. */
+    fun review(access: String, id: String, body: JsonObject): FinalizationReview = data.read(access) {
+        allowed(body, setOf("expected_version"), setOf("optimization_option_id"))
+        if (body["optimization_option_id"].let { it != null && it != JsonNull }) throw ApiFailure(422, "OPTIMIZATION_NOT_AVAILABLE")
+        val current = row(parseId(id)).version
+        if (current != version(body)) throw ApiFailure(409, "VERSION_CONFLICT", details = buildJsonObject { put("current_version", current) })
+        reviewState(parseId(id), java.time.Instant.now()).review
+    }
+    /** API-FINAL-02. */
+    fun finalize(access: String, id: String, key: String?, body: JsonObject): MutationResult = data.mutate(access,
+        MutationRequest("POST", "/plans/$id/finalize", key.orEmpty(), body)) {
+        allowed(body, setOf("expected_version", "review_id", "confirm_price_changes"), setOf("confirmed_essential_action_ids"))
+        val confirm = (body["confirm_price_changes"] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull ?: invalid("confirm_price_changes", "INVALID_BOOLEAN")
+        MutationResult(200, shoppingJson.encodeToJsonElement(finalize(parseId(id), version(body), string(body["review_id"], "review_id"), confirm)))
+    }
+    /** API-FINAL-03. */
+    fun reopen(access: String, id: String, key: String?, body: JsonObject): MutationResult = data.mutate(access,
+        MutationRequest("POST", "/plans/$id/reopen", key.orEmpty(), body)) {
+        allowed(body, setOf("expected_version"))
+        MutationResult(200, shoppingJson.encodeToJsonElement(reopen(parseId(id), version(body))))
+    }
+    private fun version(body: JsonObject): Int {
+        val expected = body["expected_version"] as? JsonPrimitive ?: invalid("expected_version", "INVALID_INTEGER")
+        val version = if (!expected.isString) expected.intOrNull else null
+        if (version == null || version <= 0) invalid("expected_version", "INVALID_INTEGER")
+        return version
     }
     private fun allowed(body: JsonObject, required: Set<String>, optional: Set<String> = emptySet()) {
         if ((body.keys - required - optional).isNotEmpty()) throw ApiFailure(400, "UNKNOWN_FIELD")

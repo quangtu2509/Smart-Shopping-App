@@ -156,6 +156,48 @@ open class ShoppingRead internal constructor(protected val c: Connection, protec
             listOf(ShoppingWarning("PLACES_NOT_CONNECTED", "Chỉ hiển thị cửa hàng đã có dữ liệu. Tìm địa điểm và cửa hàng gần nhất chưa được kết nối.")))
         return StoredMapPage(result, if (rows.size > limit) token.next(items.last().id) else null)
     }
+    internal data class ReviewState(val review: FinalizationReview, val refreshed: Map<String, Offer>)
+    /** Re-checks each catalog item against the current offer; nothing is written here. */
+    internal fun reviewState(id: UUID, now: Instant): ReviewState {
+        val p = row(id)
+        val records = records(id, p.currency)
+        if (records.isEmpty()) throw ApiFailure(422, "EMPTY_LIST")
+        if (p.status !in setOf(PlanStatus.BUILDING_LIST, PlanStatus.COMPARING, PlanStatus.OPTIMIZING)) throw ApiFailure(409, "INVALID_STATE")
+        val refreshed = mutableMapOf<String, Offer>(); val changed = mutableListOf<String>()
+        val unavailable = mutableListOf<String>(); val stale = mutableListOf<String>()
+        val items = records.map { record ->
+            val item = record.item; val snapshot = item.selected_price_snapshot
+            if (snapshot == null || snapshot.ref.kind != OfferKind.CATALOG) return@map item
+            val current = catalogOffer(snapshot.ref.id)
+            val effective = when {
+                current == null -> { unavailable += item.id; snapshot }
+                current.version == snapshot.version || current.currency != p.currency -> snapshot
+                // A newer observation replaces the snapshot; only a different price needs the User's confirmation.
+                else -> current.copy(product = snapshot.product).also { refreshed[item.id] = it
+                    val samePrice = it.price?.toBigDecimal()?.let { a -> snapshot.price?.toBigDecimal()?.compareTo(a) == 0 } ?: (snapshot.price == null)
+                    if (!samePrice) changed += item.id }
+            }
+            val observed = effective.observed_at?.let { try { Instant.parse(it) } catch (_: java.time.format.DateTimeParseException) { null } }
+            if (effective.price != null && (observed == null || observed < now.minusSeconds(86400))) stale += item.id
+            if (effective === snapshot) item else item.copy(selected_price_snapshot = effective, subtotal = money.subtotal(effective.price, item.quantity, p.currency))
+        }
+        val storeCount = items.mapNotNull { it.selected_price_snapshot?.let { o -> o.store_id ?: o.retailer_id } }.distinct().size
+        val summary = money.summary(p.budget, p.currency, items.map { it.id to it.subtotal })
+        val warnings = summary.warnings + listOfNotNull(
+            ShoppingWarning("PRICE_CHANGED", "Giá của một số món đã thay đổi kể từ khi thêm vào danh sách.", changed).takeIf { changed.isNotEmpty() },
+            ShoppingWarning("PRICE_STALE", "Giá của một số món được ghi nhận hơn 24 giờ trước; giá tại cửa hàng có thể khác.", stale).takeIf { stale.isNotEmpty() },
+            ShoppingWarning("OFFER_UNAVAILABLE", "Một số món không còn trong dữ liệu của nơi mua; giữ giá đã lưu khi thêm.", unavailable).takeIf { unavailable.isNotEmpty() },
+            ShoppingWarning("STORE_LIMIT_EXCEEDED", "Danh sách dùng $storeCount nơi mua, vượt giới hạn ${p.maxStores}.").takeIf { storeCount > p.maxStores },
+        )
+        val base = plan(id)
+        val view = base.copy(plan = base.plan.copy(budget_summary = summary), items = items, warnings = warnings)
+        val reviewId = Security().digest("${p.id}|${p.version}|" + shoppingJson.encodeToString(items))
+        return ReviewState(FinalizationReview(reviewId, p.version, view, changed, storeCount, storeCount <= p.maxStores), refreshed)
+    }
+    private fun catalogOffer(offerId: String): Offer? = query(c, """SELECT o.payload FROM shopping_offers o JOIN catalog_entries e ON e.kind=o.kind AND e.offer_id=o.id
+        WHERE o.kind='CATALOG' AND o.id=? AND e.active""", offerId).use { s -> s.executeQuery().use { r ->
+        if (r.next()) shoppingJson.decodeFromString<Offer>(r.getString(1)) else null
+    } }
     fun revision(id: UUID, revision: Int): RevisionSnapshot {
         row(id)
         return query(c, "SELECT payload FROM shopping_plan_revisions WHERE plan_id=? AND revision=?", id, revision).use { s -> s.executeQuery().use { r ->

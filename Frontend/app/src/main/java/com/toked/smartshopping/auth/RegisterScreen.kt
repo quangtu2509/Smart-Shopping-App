@@ -28,6 +28,7 @@ fun RegisterScreen(viewModel: RegisterViewModel, modifier: Modifier = Modifier) 
     val state by viewModel.state.collectAsStateWithLifecycle()
     val plans by viewModel.plans.state.collectAsStateWithLifecycle()
     val catalog by viewModel.plans.catalog.state.collectAsStateWithLifecycle()
+    val list by viewModel.plans.list.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -61,7 +62,8 @@ fun RegisterScreen(viewModel: RegisterViewModel, modifier: Modifier = Modifier) 
         onProfileEdit = viewModel::editProfile, onProfileSelect = viewModel::selectProfileReference,
         onProfileSave = viewModel::saveProfile, onProfileReload = viewModel::loadProfile,
         onProfileReferences = viewModel::retryProfileReferences, onProfileDialog = viewModel::profileDialog,
-        plans = plans, onPlanAction = viewModel.plans::onAction, catalog = catalog, onCatalogAction = viewModel.plans.catalog::onAction)
+        plans = plans, onPlanAction = viewModel.plans::onAction, catalog = catalog, onCatalogAction = viewModel.plans.catalog::onAction,
+        list = list, onListAction = viewModel.plans.list::onAction)
 }
 
 @Composable
@@ -94,6 +96,8 @@ fun AuthContent(
     onPlanAction: (PlanAction) -> Unit = {},
     catalog: CatalogUiState = CatalogUiState(),
     onCatalogAction: (CatalogAction)->Unit = {},
+    list: ListUiState = ListUiState(),
+    onListAction: (ListAction)->Unit = {},
 ) {
     if (state.page == AuthPage.ONBOARDING) {
         ShoppingProfileContent(state.profile, onProfileEdit, onProfileSelect, onProfileSave, onSkip,
@@ -102,7 +106,7 @@ fun AuthContent(
     }
     if (state.page == AuthPage.HOME_ENTRY) {
         if (plans.step != PlanStep.CLOSED) {
-            PlanContent(plans, onPlanAction, modifier, catalog, onCatalogAction)
+            PlanContent(plans, onPlanAction, modifier, catalog, onCatalogAction, list, onListAction)
             return
         }
         key(state.account?.userId) {
